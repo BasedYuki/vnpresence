@@ -5,11 +5,11 @@ Discord profile shows the title, the cover art, how long you have been reading,
 and a link to its VNDB page - the way a normal game does.
 
 ```
-Playing a Visual Novel
+Playing Steins;Gate
 ┌────────┐  Steins;Gate
 │ cover  │  Reading
-│  art   │  01:24:07 elapsed
-└────────┘  [ View on VNDB ]
+│  art   │  Long (30-50h) • 2009 • ★ 8.9
+└────────┘  01:24:07 elapsed   [ View on VNDB ]
 ```
 
 - Cover art and descriptions come from [VNDB](https://vndb.org) automatically
@@ -144,7 +144,7 @@ Every key it accepts:
 
 | Key | Default | What it does |
 |---|---|---|
-| `title` | *(required)* | The line shown under "Playing a Visual Novel" |
+| `title` | *(required)* | The game's name - it becomes the "Playing …" line |
 | `path` | - | The executable to launch |
 | `args` | `[]` | Arguments passed to it |
 | `working_dir` | folder of `path` | Working directory (some engines need it) |
@@ -182,21 +182,36 @@ Examples of complete profiles live in [`examples/games/`](examples/games/).
 ## 5. Discord application / client id
 
 **You do not need to do anything.** VNPresence ships with its own Discord
-application, named "a Visual Novel", and that is what makes the top line read
-*Playing a Visual Novel*. This section is only for people who want their own.
+application and puts the game's name into the activity, so the header reads
+*Playing Steins;Gate*.
 
-Why the game title is not on the top line: Discord takes it from the
-**application's own name**, not from the data an app sends. It cannot be changed
-per game, which is why every tool of this kind puts the title on the second line.
-VNPresence therefore names its application "a Visual Novel" and gives the title the
-most prominent line it actually controls.
+A note on how that works, because most tools of this kind cannot do it: Discord
+normally prints the *application's* name after "Playing", and that name is fixed
+in the developer portal. Current Discord clients also accept a `name` field
+inside the activity itself, and VNPresence sends it - so the header follows the
+game instead of the application. If the field is ever refused, the activity is
+still published without it and the title stays on the line below; nothing
+breaks.
 
-If you want the header to read something else - your own name, or one
-application per game - make your own:
+Check what your own client does:
+
+```bash
+python tools/probe_name_override.py
+```
+
+If your client is old enough to ignore the field, put the title back on the
+second line:
+
+```yaml
+# config.yaml
+use_activity_name: false
+```
+
+You only need your own application if you want the *fallback* name (what shows
+when the field is ignored) to be something else:
 
 1. Open <https://discord.com/developers/applications> → **New Application**.
-2. Name it `a Visual Novel` - or anything you want to read after the word
-   *Playing*.
+2. Name it whatever should appear after *Playing*.
 3. Copy the **Application ID** from *General Information*.
 4. Put it in your config, globally or for one game:
 
@@ -214,24 +229,22 @@ client_id: "987654321098765432"
 You do **not** need to upload any images: VNPresence passes VNDB cover URLs
 directly, which also sidesteps Discord's 300-asset limit per application.
 
-Full walkthrough with screenshots: [`docs/discord-setup.md`](docs/discord-setup.md).
+Full walkthrough: [`docs/discord-setup.md`](docs/discord-setup.md).
 
 ## 6. What the presence looks like
 
 A normal game, privacy `full`:
 
 ```
-Playing a Visual Novel
-┌────────┐  Steins;Gate                    <- details: the title
-│ VNDB   │  Reading                        <- state: status text or plugin state
-│ cover  │  01:24:07 elapsed               <- timestamps.start
-└────────┘  [ View on VNDB ]               <- button
+Playing Steins;Gate                        <- name: the game itself
+┌────────┐  Steins;Gate                    <- the activity card
+│ VNDB   │  Reading                        <- details: status or plugin state
+│ cover  │  Long (30-50h) • 2009 • ★ 8.9   <- state: what VNDB knows
+└────────┘  01:24:07 elapsed
+            [ View on VNDB ]
 ```
 
-Hovering the cover shows the Japanese title; hovering the small corner icon shows
-`Long (30-50h) • 2009 • ★ 8.9`.
-
-An 18+ title, privacy `auto`:
+An 18+ title, privacy `auto` - no name, no art, nothing identifying:
 
 ```
 Playing a Visual Novel
@@ -243,72 +256,11 @@ Reading
 With a state plugin that reads the current chapter:
 
 ```
-Playing a Visual Novel
+Playing Muv-Luv Alternative
 ┌────────┐  Muv-Luv Alternative
 │ cover  │  Chapter 3 - Ayamine route
 └────────┘  02:40:09 elapsed
 ```
-
-### Auto-detect mode
-
-`vnpresence play` starts the game for you. If you would rather start games the
-way you always have - from Steam, a shortcut, or the game's own launcher - run
-the watcher instead and forget about it:
-
-```bash
-vnpresence watch -b
-```
-
-It scans the running processes every few seconds, and the moment one matches a
-game in your library it attaches and publishes the presence, exactly as `play`
-would. When the game closes it goes back to watching.
-
-`-b` (`--background`) detaches it: your terminal comes straight back, and the
-watcher keeps running after you close the window. Manage it with:
-
-```bash
-vnpresence status   # running or not, and its pid
-vnpresence stop     # stop it
-```
-
-Without `-b` it stays in the foreground and prints what it is doing, which is
-the better way to see why a game is not being picked up. `Ctrl+C` ends that one.
-
-### Never touching a terminal
-
-The window has the same two switches, and they are all a normal install needs:
-
-| Switch | What it does |
-|---|---|
-| **Auto-detect games I start myself** | Starts and stops the background watcher |
-| **Start with Windows** | Runs the watcher every time you log in |
-
-Tick both once and you are done: add your games, start them however you like,
-and the presence takes care of itself. ("Start with Windows" adds a single
-per-user entry named `VNPresence` under
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; unticking it removes
-the entry. No administrator rights, no scheduled task, nothing left behind.)
-
-The command line has the same thing: `vnpresence autostart on|off|status`.
-
-```
-[watch] watching 6 game(s); Ctrl+C to stop
-[detected] Steins;Gate (sg.exe)
-[presence] activity published
-[end] session ended after 2h 14m
-```
-
-Notes:
-
-- A game is matched by its executable name, or by `process_names` if you set it.
-- Games with `privacy: off` are ignored entirely - they are never even attached to.
-- One process scan covers the whole library, so a large library costs no more
-  than a small one. Change the pace with `watch_interval` in `config.yaml`.
-- Only one watcher runs at a time; starting a second one tells you so instead
-  of quietly doubling up.
-- To have it there every time you log in, put a shortcut to
-  `VNPresence.exe watch` in `shell:startup` (press Win+R, type `shell:startup`).
-  The released .exe has no console window, so it just sits there quietly.
 
 ## 7. Privacy
 

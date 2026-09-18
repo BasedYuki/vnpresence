@@ -75,13 +75,26 @@ class DefaultFormatter(PresenceFormatter):
             }
 
         title = profile.title or (metadata.title if metadata else "Visual Novel")
-        payload: dict[str, Any] = {
-            "details": clamp(title),
-            "state": clamp(
-                state.status_text or profile.status_text or config.default_status_text
-            ),
-            "start": start,
-        }
+        status = state.status_text or profile.status_text or config.default_status_text
+
+        if config.use_activity_name:
+            # Current Discord clients honour `name`, so the header itself can be
+            # the game: "Playing Steins;Gate". The title then does not need to be
+            # repeated in `details`, which frees that line for the status.
+            payload: dict[str, Any] = {
+                "name": clamp(title),
+                "details": clamp(status),
+                "state": clamp(_subtitle(metadata) if metadata else None),
+                "start": start,
+            }
+        else:
+            # Older clients ignore `name` and print the application's name, so
+            # the title has to live in `details` or it would be lost entirely.
+            payload = {
+                "details": clamp(title),
+                "state": clamp(status),
+                "start": start,
+            }
 
         large_image = profile.image_url or (metadata.image_url if metadata else None)
         if large_image:
@@ -93,7 +106,10 @@ class DefaultFormatter(PresenceFormatter):
         small_image = state.small_image or config.small_image
         if small_image and large_image:
             payload["small_image"] = small_image
-            payload["small_text"] = clamp(state.small_text or _subtitle(metadata))
+            # With the name layout the subtitle is already on the state line,
+            # so the little icon shows the title instead of repeating it.
+            fallback = title if config.use_activity_name else _subtitle(metadata)
+            payload["small_text"] = clamp(state.small_text or fallback)
 
         show_buttons = (
             profile.show_buttons if profile.show_buttons is not None else config.show_buttons

@@ -8,12 +8,42 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import time
+import uuid
 from typing import Any
 
 log = logging.getLogger(__name__)
 
 MIN_UPDATE_INTERVAL = 15.0
+
+
+def to_activity(payload: dict[str, Any]) -> dict[str, Any]:
+    """Turn our flat payload into the activity object Discord's IPC expects."""
+    activity: dict[str, Any] = {"type": 0}
+    for key in ("name", "details", "state"):
+        if payload.get(key):
+            activity[key] = payload[key]
+
+    if payload.get("start") or payload.get("end"):
+        timestamps = {}
+        if payload.get("start"):
+            timestamps["start"] = int(payload["start"])
+        if payload.get("end"):
+            timestamps["end"] = int(payload["end"])
+        activity["timestamps"] = timestamps
+
+    assets = {
+        name: payload[name]
+        for name in ("large_image", "large_text", "small_image", "small_text")
+        if payload.get(name)
+    }
+    if assets:
+        activity["assets"] = assets
+
+    if payload.get("buttons"):
+        activity["buttons"] = payload["buttons"]
+    return activity
 
 
 class PresenceError(RuntimeError):
@@ -82,7 +112,7 @@ class DiscordPresence:
         if too_soon and not force:
             return False
         try:
-            self._rpc.update(**payload)  # type: ignore[union-attr]
+            self._send(payload)
             self._last_payload = dict(payload)
             self._last_sent = now
             return True
@@ -90,6 +120,37 @@ class DiscordPresence:
             log.warning("presence update failed (%s); will reconnect", exc)
             self.close()
             return False
+
+    def _send(self, payload: dict[str, Any]) -> None:
+        """Send the activity, using the raw protocol when a `name` is set.
+
+        pypresence's ``update()`` has no ``name`` parameter, because the field
+        was not always honoured. Current Discord clients do honour it, and it is
+        the only way to make the header read "Playing <the game>" instead of
+        "Playing <the application>", so the payload is sent by hand when a name
+        is present - falling back to the library call if anything goes wrong.
+        """
+        if not payload.get("name"):
+            self._rpc.update(**payload)  # type: ignore[union-attr]
+            return
+        try:
+            self._send_raw(payload)
+        except Exception as exc:
+            log.debug("raw activity send failed (%s); falling back", exc, exc_info=True)
+            without_name = {k: v for k, v in payload.items() if k != "name"}
+            self._rpc.update(**without_name)  # type: ignore[union-attr]
+
+    def _send_raw(self, payload: dict[str, Any]) -> None:
+        rpc = self._rpc
+        frame = {
+            "cmd": "SET_ACTIVITY",
+            "args": {"pid": os.getpid(), "activity": to_activity(payload)},
+            "nonce": str(uuid.uuid4()),
+        }
+        rpc.send_data(1, frame)  # type: ignore[union-attr]
+        # Discord answers every frame; leaving replies unread would fill the
+        # pipe over a long session, so drain it the same way pypresence does.
+        rpc.loop.run_until_complete(rpc.read_output())  # type: ignore[union-attr]
 
     def clear(self) -> bool:
         if not self.connected or self._rpc is None:

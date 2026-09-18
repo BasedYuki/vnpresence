@@ -32,8 +32,10 @@ def build(prof, meta, state=None, config=CONFIG):
 
 def test_full_payload_has_every_requested_field():
     payload = build(profile(), metadata())
-    assert payload["details"] == "Steins;Gate"
-    assert payload["state"] == "Reading"
+    # The header itself is the game: "Playing Steins;Gate".
+    assert payload["name"] == "Steins;Gate"
+    assert payload["details"] == "Reading"
+    assert payload["state"] == "Long (30-50h) \u2022 2009"
     assert payload["large_image"] == "https://t.vndb.org/cv/sg.jpg"
     assert payload["small_image"] == "https://example.com/icon.png"
     assert payload["start"] == 1000
@@ -50,7 +52,7 @@ def test_nsfw_auto_hides_title_and_art():
 def test_nsfw_auto_can_be_disabled():
     config = AppConfig(nsfw_auto_private=False)
     payload = build(profile(), metadata(nsfw=True), config=config)
-    assert payload["details"] == "Steins;Gate"
+    assert payload["name"] == "Steins;Gate"
 
 
 def test_privacy_off_publishes_nothing():
@@ -59,12 +61,34 @@ def test_privacy_off_publishes_nothing():
 
 def test_explicit_full_overrides_nsfw():
     payload = build(profile(privacy=PrivacyMode.FULL), metadata(nsfw=True))
-    assert payload["details"] == "Steins;Gate"
+    assert payload["name"] == "Steins;Gate"
 
 
 def test_state_provider_overrides_status_line():
     payload = build(profile(), metadata(), PresenceState(status_text="Chapter 3 - Butterfly"))
-    assert payload["state"] == "Chapter 3 - Butterfly"
+    assert payload["details"] == "Chapter 3 - Butterfly"
+
+
+def test_legacy_layout_keeps_the_title_on_the_second_line():
+    """Old clients ignore `name`, so the title must stay in `details` there."""
+    config = AppConfig(client_id="1", use_activity_name=False)
+    payload = build(profile(), metadata(), config=config)
+    assert "name" not in payload
+    assert payload["details"] == "Steins;Gate"
+    assert payload["state"] == "Reading"
+
+
+def test_private_mode_never_puts_the_title_in_the_header():
+    payload = build(profile(privacy=PrivacyMode.PRIVATE), metadata())
+    assert "name" not in payload
+    assert payload["details"] == CONFIG.private_title
+    assert "Steins;Gate" not in str(payload)
+
+
+def test_a_game_without_metadata_still_gets_a_name():
+    payload = build(profile(), None)
+    assert payload["name"] == "Steins;Gate"
+    assert payload.get("state") is None or payload["state"] == ""
 
 
 def test_profile_image_override_wins():

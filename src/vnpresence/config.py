@@ -71,6 +71,12 @@ class AppConfig:
     default_privacy: str = "auto"
     #: Second presence line when a game provides nothing more specific.
     default_status_text: str = "Reading"
+    #: Put the game's name in the activity itself, so the header reads
+    #: "Playing Steins;Gate" instead of "Playing a Visual Novel". Current
+    #: Discord clients honour this; set it to false on a very old client, where
+    #: the name is ignored and the title belongs on the second line instead.
+    #: Check yours with: python tools/probe_name_override.py
+    use_activity_name: bool = True
     #: Text shown for the neutral activity in private mode.
     private_title: str = "Reading a visual novel"
     #: Show the "View on VNDB" button.

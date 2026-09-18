@@ -92,3 +92,93 @@ def test_missing_plugin_is_ignored():
     registry = PluginRegistry()
     profile = GameProfile(id="x", title="X", plugin="nope")
     assert registry.state_provider_for(profile) is None
+
+
+# -- the activity `name` field -------------------------------------------
+def test_to_activity_shapes_the_payload_for_discord():
+    from vnpresence.presence import to_activity
+
+    activity = to_activity(
+        {
+            "name": "Steins;Gate",
+            "details": "Reading",
+            "state": "Long (30-50h)",
+            "start": 1000,
+            "large_image": "https://t.vndb.org/cv/sg.jpg",
+            "large_text": "SG",
+            "small_image": "icon",
+            "small_text": "VN",
+            "buttons": [{"label": "View on VNDB", "url": "https://vndb.org/v2002"}],
+        }
+    )
+    assert activity["type"] == 0
+    assert activity["name"] == "Steins;Gate"
+    assert activity["timestamps"] == {"start": 1000}
+    assert activity["assets"]["large_image"].endswith("sg.jpg")
+    assert activity["assets"]["small_text"] == "VN"
+    assert activity["buttons"][0]["label"] == "View on VNDB"
+
+
+def test_to_activity_omits_empty_sections():
+    from vnpresence.presence import to_activity
+
+    activity = to_activity({"details": "Reading"})
+    assert "assets" not in activity
+    assert "timestamps" not in activity
+    assert "buttons" not in activity
+
+
+class RawRPC(FakeRPC):
+    """A client that records raw frames, like pypresence's sync Presence."""
+
+    def __init__(self, client_id):
+        super().__init__(client_id)
+        self.frames = []
+        self.loop = self
+        self.raw_fails = False
+
+    def send_data(self, op, payload):
+        if self.raw_fails:
+            raise OSError("pipe closed")
+        self.frames.append(payload)
+
+    def read_output(self):
+        return {"evt": None}
+
+    def run_until_complete(self, value):  # stands in for the asyncio loop
+        return value
+
+
+def make_raw_presence():
+    created = {}
+
+    def backend(client_id):
+        created["rpc"] = RawRPC(client_id)
+        return created["rpc"]
+
+    return DiscordPresence("123", backend=backend), created
+
+
+def test_a_name_is_sent_through_the_raw_protocol():
+    presence, created = make_raw_presence()
+    presence.update({"name": "Steins;Gate", "details": "Reading"}, force=True)
+    frame = created["rpc"].frames[0]
+    assert frame["cmd"] == "SET_ACTIVITY"
+    assert frame["args"]["activity"]["name"] == "Steins;Gate"
+    assert created["rpc"].updates == []  # the library call was not used
+
+
+def test_payloads_without_a_name_use_the_library_call():
+    presence, created = make_raw_presence()
+    presence.update({"details": "Steins;Gate"}, force=True)
+    assert created["rpc"].updates == [{"details": "Steins;Gate"}]
+    assert created["rpc"].frames == []
+
+
+def test_a_broken_raw_send_falls_back_to_the_library():
+    presence, created = make_raw_presence()
+    presence.connect()  # the fake client only exists once connected
+    created["rpc"].raw_fails = True
+    assert presence.update({"name": "Steins;Gate", "details": "Reading"}, force=True) is True
+    # It still got published, just without the custom name.
+    assert created["rpc"].updates == [{"details": "Reading"}]
