@@ -124,18 +124,64 @@ def play(game: str, attach: bool) -> None:
 @main.command("watch")
 @click.option("--interval", type=float, default=None, help="Seconds between scans.")
 @click.option("--once", is_flag=True, help="Handle one game and exit (useful for testing).")
-def watch(interval: float | None, once: bool) -> None:
+@click.option(
+    "-b",
+    "--background",
+    is_flag=True,
+    help="Detach and keep watching after you close this window.",
+)
+def watch(interval: float | None, once: bool, background: bool) -> None:
     """Watch for library games started outside VNPresence and attach to them."""
+    from .daemon import running_pid, spawn_background
     from .watcher import LibraryWatcher
+
+    watcher = LibraryWatcher(interval=interval)
+    if not watcher.watchable():
+        raise click.ClickException("no games to watch - add one with: vnpresence add")
+
+    already = running_pid()
+    if already is not None:
+        raise click.ClickException(
+            f"a watcher is already running (pid {already}). Stop it with: vnpresence stop"
+        )
+
+    if background:
+        extra = ["--interval", str(interval)] if interval else []
+        pid = spawn_background(extra)
+        click.secho(f"✓ watching in the background (pid {pid})", fg="green")
+        click.echo("It keeps running after you close this window.")
+        click.echo("Stop it with:  vnpresence stop")
+        return
 
     def report(kind: str, message: str) -> None:
         colors = {"warning": "yellow", "privacy": "yellow", "error": "red", "detected": "green"}
         click.secho(f"[{kind}] {message}", fg=colors.get(kind))
 
-    watcher = LibraryWatcher(interval=interval)
-    if not watcher.watchable():
-        raise click.ClickException("no games to watch - add one with: vnpresence add")
-    watcher.run(on_event=report, once=once)
+    watcher.run(on_event=report, once=once, record_pid=True)
+
+
+@main.command("stop")
+def stop() -> None:
+    """Stop a watcher running in the background."""
+    from .daemon import stop_background
+
+    pid = stop_background()
+    if pid is None:
+        click.echo("No background watcher is running.")
+        return
+    click.secho(f"✓ stopped the watcher (pid {pid})", fg="green")
+
+
+@main.command("status")
+def status() -> None:
+    """Say whether a background watcher is running."""
+    from .daemon import running_pid
+
+    pid = running_pid()
+    if pid is None:
+        click.echo("Not running.  Start it with:  vnpresence watch --background")
+    else:
+        click.secho(f"Watching in the background (pid {pid}).", fg="green")
 
 
 @main.command("remove")

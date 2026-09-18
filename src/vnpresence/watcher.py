@@ -20,6 +20,7 @@ from dataclasses import dataclass
 import psutil
 
 from .config import AppConfig
+from .daemon import clear_record, write_record
 from .launcher import _split_path
 from .library import Library
 from .models import GameProfile, PrivacyMode
@@ -85,9 +86,17 @@ class LibraryWatcher:
         return None
 
     # -- loop -------------------------------------------------------------
-    def run(self, on_event: EventHandler | None = None, *, once: bool = False) -> None:
+    def run(
+        self,
+        on_event: EventHandler | None = None,
+        *,
+        once: bool = False,
+        record_pid: bool = False,
+    ) -> None:
         notify = on_event or (lambda kind, message: log.info("%s: %s", kind, message))
         notify("watch", f"watching {len(self.watchable())} game(s); Ctrl+C to stop")
+        if record_pid:
+            write_record()
 
         try:
             while not self._stop:
@@ -115,6 +124,9 @@ class LibraryWatcher:
                 time.sleep(self.interval)
         except KeyboardInterrupt:
             notify("watch", "stopped")
+        finally:
+            if record_pid:
+                clear_record()
 
     def stop(self) -> None:
         self._stop = True

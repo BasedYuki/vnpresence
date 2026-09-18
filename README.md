@@ -80,7 +80,9 @@ vnpresence add "D:\VN\Steins Gate\sg.exe"   # add a game (searches VNDB for you)
 vnpresence list                             # what is in your library
 vnpresence play steins-gate                 # launch it and publish the presence
 vnpresence play steins-gate --attach        # attach to a game that is already open
-vnpresence watch                            # auto-detect any library game you start
+vnpresence watch -b                         # auto-detect games, in the background
+vnpresence status                           # is a background watcher running?
+vnpresence stop                             # stop it
 vnpresence search "muv luv"                 # look up VNDB ids
 vnpresence doctor                           # check Discord, VNDB, config, paths
 vnpresence plugins                          # list active plugins
@@ -241,12 +243,23 @@ way you always have - from Steam, a shortcut, or the game's own launcher - run
 the watcher instead and forget about it:
 
 ```bash
-vnpresence watch
+vnpresence watch -b
 ```
 
 It scans the running processes every few seconds, and the moment one matches a
 game in your library it attaches and publishes the presence, exactly as `play`
 would. When the game closes it goes back to watching.
+
+`-b` (`--background`) detaches it: your terminal comes straight back, and the
+watcher keeps running after you close the window. Manage it with:
+
+```bash
+vnpresence status   # running or not, and its pid
+vnpresence stop     # stop it
+```
+
+Without `-b` it stays in the foreground and prints what it is doing, which is
+the better way to see why a game is not being picked up. `Ctrl+C` ends that one.
 
 ```
 [watch] watching 6 game(s); Ctrl+C to stop
@@ -261,8 +274,11 @@ Notes:
 - Games with `privacy: off` are ignored entirely - they are never even attached to.
 - One process scan covers the whole library, so a large library costs no more
   than a small one. Change the pace with `watch_interval` in `config.yaml`.
-- Start it with Windows by putting a shortcut to `VNPresence.exe watch` in
-  `shell:startup`.
+- Only one watcher runs at a time; starting a second one tells you so instead
+  of quietly doubling up.
+- To have it there every time you log in, put a shortcut to
+  `VNPresence.exe watch` in `shell:startup` (press Win+R, type `shell:startup`).
+  The released .exe has no console window, so it just sits there quietly.
 
 ## 7. Privacy
 
