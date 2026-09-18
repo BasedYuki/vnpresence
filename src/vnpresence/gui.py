@@ -10,8 +10,7 @@ import logging
 import sys
 import threading
 import tkinter as tk
-from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from . import startup
 from .config import AppConfig
@@ -20,6 +19,7 @@ from .launcher import LaunchError
 from .library import Library
 from .models import GameProfile, PrivacyMode
 from .session import GameSession, format_duration
+from .titles import guess_title
 from .vndb import VNDBClient, VNDBError
 
 log = logging.getLogger(__name__)
@@ -140,21 +140,27 @@ class App(tk.Tk):
         )
         if not path:
             return
-        stem = Path(path).stem
-        metadata, vndb_id = None, None
-        try:
-            results = VNDBClient(cache_days=self.config_data.cache_days).search(stem, limit=1)
-            if results:
-                metadata = results[0]
-                vndb_id = (metadata.url or "").rsplit("/", 1)[-1] or None
-        except VNDBError as exc:
-            log.warning("VNDB search failed: %s", exc)
+        # The .exe is usually named after the engine, the folder after the game.
+        guess = guess_title(path)
+        metadata, vndb_id = self._lookup(guess)
 
-        title = metadata.title if metadata else stem
-        if metadata and not messagebox.askyesno(
-            "VNDB match", f"Is this the right game?\n\n{metadata.title}"
+        if metadata is None or not messagebox.askyesno(
+            "VNDB match",
+            f"Is this the right game?\n\n{metadata.title}" if metadata else
+            f"Nothing on VNDB matches “{guess}”.\n\nSearch by another name?",
         ):
-            title, vndb_id = stem, None
+            typed = simpledialog.askstring(
+                "Game name", "Type the game's name:", initialvalue=guess, parent=self
+            )
+            if typed:
+                metadata, vndb_id = self._lookup(typed)
+                if metadata is None:
+                    metadata, vndb_id = None, None
+                    guess = typed
+            else:
+                metadata, vndb_id = None, None
+
+        title = metadata.title if metadata else guess
 
         profile = GameProfile(
             id=self.library.unique_id(title),
@@ -166,6 +172,18 @@ class App(tk.Tk):
         self.library.save(profile)
         self.refresh()
         self.status.set(f"Added {title}")
+
+    def _lookup(self, term: str):
+        """Search VNDB for a name; returns (metadata, vndb_id) or (None, None)."""
+        try:
+            results = VNDBClient(cache_days=self.config_data.cache_days).search(term, limit=1)
+        except VNDBError as exc:
+            log.warning("VNDB search failed: %s", exc)
+            return None, None
+        if not results:
+            return None, None
+        metadata = results[0]
+        return metadata, (metadata.url or "").rsplit("/", 1)[-1] or None
 
     def remove_selected(self) -> None:
         profile = self.selected_profile()

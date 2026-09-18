@@ -15,6 +15,7 @@ from .library import Library
 from .models import GameProfile, PrivacyMode, normalise_vndb_id
 from .plugins import build_registry
 from .session import GameSession, format_duration
+from .titles import guess_title
 from .vndb import VNDBClient, VNDBError
 
 
@@ -60,14 +61,19 @@ def add_game(
     library = Library()
     metadata = None
 
+    # The executable is often named after the engine (SiglusEngine, reallive,
+    # game.exe), so the folder is usually the better guess for both the search
+    # and the fallback title.
+    guessed = guess_title(path)
+
     if vndb_id:
         vndb_id = normalise_vndb_id(vndb_id)
         metadata = _lookup(vndb_id, config)
     elif search_term or not title:
-        term = search_term or path.stem
+        term = search_term or guessed
         metadata, vndb_id = _search_interactive(term, config)
 
-    resolved_title = title or (metadata.title if metadata else path.stem)
+    resolved_title = title or (metadata.title if metadata else guessed)
     profile = GameProfile(
         id=library.unique_id(resolved_title),
         title=resolved_title,
@@ -323,6 +329,13 @@ def _search_interactive(term: str, config: AppConfig):
         return None, None
     if not results:
         click.secho(f"! nothing on VNDB matches {term!r}", fg="yellow")
+        retry = click.prompt(
+            "Type the game's name to search again (or press Enter to skip)",
+            default="",
+            show_default=False,
+        ).strip()
+        if retry:
+            return _search_interactive(retry, config)
         return None, None
     click.echo(f"VNDB matches for {term!r}:")
     for index, item in enumerate(results, start=1):

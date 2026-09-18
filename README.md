@@ -116,8 +116,16 @@ Set `VNPRESENCE_HOME` to keep everything in one portable folder next to the `.ex
 vnpresence add "D:\VN\Clannad\Clannad.exe"
 ```
 
-VNPresence searches VNDB with the file name, shows you the matches, and writes a
-profile. That is all most games need.
+VNPresence works out the game's name, searches VNDB with it, shows you the
+matches, and writes a profile. That is all most games need.
+
+It does **not** simply use the file name: visual novels are usually launched by
+an executable named after the engine (`SiglusEngine_SteamEN.exe`,
+`reallive.exe`, `game.exe`), so when the file name is an engine or a
+placeholder, the folder name is used instead -
+`K:\Games\Rewrite\SiglusEngine_SteamEN.exe` is added as **Rewrite**. If VNDB
+still finds nothing, you are asked to type the name yourself rather than being
+left with a junk title.
 
 ### The profile file
 
@@ -378,6 +386,7 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 |---|---|
 | Nothing appears on your profile | Discord desktop app not running, or *Activity Privacy → Share your detected activities* is off |
 | Presence disappears a second after launch | The game uses a launcher - set `process_names` (see [section 4](#4-adding-visual-novels)) |
+| Title is the engine's name (`SiglusEngine`, `reallive`) | An old profile from before 0.5.0 - fix the title and `vndb_id` in its YAML, or remove and add the game again |
 | Title shows but no cover art | No `vndb_id` on the profile, or VNDB was unreachable when it was added - run `vnpresence add --vndb v2002 ...` again or set `image_url` |
 | You see the presence but no buttons | Discord does not render buttons on **your own** profile - ask a friend, or check from another account |
 | "requires elevation" / WinError 740 | The game demands administrator rights. VNPresence re-launches it through a UAC prompt - approve it. To stop being asked every time, right-click the .exe → Properties → Compatibility, or run VNPresence as administrator |
