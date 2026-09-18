@@ -57,7 +57,12 @@ def main() -> None:
     icon = build()
     icon.save(OUT / "icon.png")
     icon.resize((256, 256), Image.LANCZOS).save(OUT / "icon-256.png")
-    print(f"wrote {OUT / 'icon.png'} and {OUT / 'icon-256.png'}")
+    # .ico for the Windows executable itself (PyInstaller --icon)
+    icon.save(
+        OUT / "icon.ico",
+        sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+    )
+    print(f"wrote icon.png, icon-256.png and icon.ico in {OUT}")
 
 
 if __name__ == "__main__":

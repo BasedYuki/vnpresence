@@ -55,6 +55,10 @@ with others"** must be on, or nothing shows up.
 1. Download `VNPresence.exe` from the [Releases page](https://github.com/BasedYuki/vnpresence/releases).
 2. Put it anywhere and run it. No installer, no Python.
 
+The release also carries `VNPresence-cli.exe`. It is the same program with a
+console attached, for when you want to see the output of `doctor`, `watch` or
+`list`. The windowed one prints nowhere, by design.
+
 ### Option B - from PyPI
 
 ```bash

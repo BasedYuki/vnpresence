@@ -20,18 +20,43 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Test before shipping
         run: pytest -q
-      - name: Build VNPresence.exe
+
+      # tools/entry.py, never src/vnpresence/__main__.py: a frozen entry script
+      # runs standalone, so relative imports inside the package would break it.
+      - name: Build VNPresence.exe (windowed)
         run: >
           pyinstaller --onefile --windowed --name VNPresence
-          --collect-submodules vnpresence
-          src/vnpresence/__main__.py
+          --icon assets/icon.ico
+          --paths src --collect-submodules vnpresence
+          tools/entry.py
+
+      - name: Build VNPresence-cli.exe (console, for doctor/watch output)
+        run: >
+          pyinstaller --onefile --console --name VNPresence-cli
+          --icon assets/icon.ico
+          --paths src --collect-submodules vnpresence
+          tools/entry.py
+
+      # A frozen build can fail at import time while the tests all pass, so
+      # prove the real .exe runs before it is published.
+      - name: Smoke-test the build
+        run: |
+          .\dist\VNPresence-cli.exe --version
+          .\dist\VNPresence-cli.exe --help
+          .\dist\VNPresence-cli.exe status
+
       - uses: actions/upload-artifact@v4
         with:
           name: VNPresence-windows
-          path: dist/VNPresence.exe
+          path: |
+            dist/VNPresence.exe
+            dist/VNPresence-cli.exe
+
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/VNPresence.exe
+          files: |
+            dist/VNPresence.exe
+            dist/VNPresence-cli.exe
           generate_release_notes: true
