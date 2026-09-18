@@ -198,3 +198,31 @@ def test_startup_switch_unticks_on_an_unsupported_platform(app, monkeypatch):
     app.startup_var.set(True)
     app.toggle_startup()
     assert app.startup_var.get() is False
+
+
+def test_default_privacy_is_full_out_of_the_box():
+    assert gui.AppConfig().default_privacy == "full"
+
+
+def test_changing_the_default_privacy_is_saved(app, tmp_path, monkeypatch):
+    saved = {}
+    app.config_data = gui.AppConfig(client_id="1")
+    app.default_privacy_var = Box("auto")
+    def remember(self, path=None):
+        saved["mode"] = self.default_privacy
+
+    monkeypatch.setattr(gui.AppConfig, "save", remember)
+    app.apply_default_privacy()
+    assert saved["mode"] == "auto"
+    assert "auto" in app.status.get()
+
+
+def test_added_games_use_the_configured_default(app, monkeypatch):
+    monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **k: r"D:\VN\Clannad\game.exe")
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: None)
+    app._lookup = lambda term: (None, None)
+    app.config_data = gui.AppConfig(client_id="1", default_privacy="auto")
+    app.refresh = lambda: None
+    app.add_game()
+    added = [p for p in app.library.load_all() if p.title == "Clannad"][0]
+    assert added.privacy.value == "auto"

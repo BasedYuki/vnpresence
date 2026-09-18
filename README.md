@@ -15,7 +15,7 @@ Playing Steins;Gate
 - Cover art and descriptions come from [VNDB](https://vndb.org) automatically
 - Auto-detect mode picks up games you start from Steam or a shortcut
 - Adding a game is one line of YAML - or two clicks in the window
-- Per-game privacy, with 18+ titles hidden by default
+- Per-game privacy, with a one-switch option to hide 18+ titles
 - A plugin API for anything the defaults do not cover
 - MIT licensed, no telemetry, nothing phoning home except VNDB
 
@@ -269,12 +269,21 @@ friend on your list. Privacy is per game:
 
 | Mode | What friends see |
 |---|---|
-| `auto` *(default)* | Full details, **unless** VNDB marks the title 18+ - then `private` |
-| `full` | Title, cover art, VNDB button |
+| `auto` | Full details, **unless** VNDB marks the title 18+ - then `private` |
+| `full` *(default)* | Title, cover art, VNDB button |
 | `private` | "Reading a visual novel" - no title, no art, no link |
 | `off` | Nothing at all; the game just runs |
 
-Change it in the window's dropdown, or in the profile:
+New games are added as `full`. If you would rather have 18+ titles hidden
+without thinking about it, switch the default once - in the window's
+**New games** dropdown, or in `config.yaml`:
+
+```yaml
+default_privacy: auto
+```
+
+Either way you can change any single game afterwards, in the window's dropdown
+or in the profile:
 
 ```yaml
 privacy: private

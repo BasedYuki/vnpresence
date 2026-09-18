@@ -87,6 +87,19 @@ class App(tk.Tk):
         combo.pack(side="left", padx=6)
         combo.bind("<<ComboboxSelected>>", lambda _e: self.apply_privacy())
 
+        # Set it once here instead of fixing every game after adding it.
+        ttk.Label(privacy_row, text="New games:").pack(side="left", padx=(16, 0))
+        self.default_privacy_var = tk.StringVar(value=self.config_data.default_privacy)
+        default_combo = ttk.Combobox(
+            privacy_row,
+            textvariable=self.default_privacy_var,
+            values=[m.value for m in PrivacyMode if m is not PrivacyMode.OFF],
+            state="readonly",
+            width=8,
+        )
+        default_combo.pack(side="left", padx=6)
+        default_combo.bind("<<ComboboxSelected>>", lambda _e: self.apply_default_privacy())
+
         # The two switches that make the app hands-off: no terminal needed.
         switches = ttk.Frame(frame)
         switches.pack(fill="x", pady=(10, 0))
@@ -250,6 +263,21 @@ class App(tk.Tk):
             "VNPresence will start watching when you log in."
             if wanted
             else "VNPresence will no longer start with Windows."
+        )
+
+    def apply_default_privacy(self) -> None:
+        """Remember the privacy mode new games should start with."""
+        chosen = self.default_privacy_var.get()
+        self.config_data.default_privacy = chosen
+        try:
+            self.config_data.save()
+        except Exception as exc:  # pragma: no cover - disk trouble
+            messagebox.showerror("VNPresence", f"Could not save that setting:\n{exc}")
+            return
+        self.status.set(
+            "New games will show their title and cover."
+            if chosen == PrivacyMode.FULL.value
+            else f"New games will be added as '{chosen}'."
         )
 
     def play_selected(self) -> None:

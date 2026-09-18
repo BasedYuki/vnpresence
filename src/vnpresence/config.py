@@ -12,16 +12,12 @@ import yaml
 
 APP_NAME = "VNPresence"
 
-#: The Discord application VNPresence connects to.
+#: The Discord application VNPresence connects to, named "a Visual Novel".
 #:
-#: Discord takes the bold "Playing <name>" line from the application's own name,
-#: not from the payload, so this application is named "Visual Novel" and the game
-#: title goes in the `details` line.
-#:
-#: This is the project's own application, named "a Visual Novel" - that name is
-#: what Discord prints after the word "Playing", so users need no setup at all.
-#: An application id is public information, not a secret.
-#: Users can override it in config.yaml, or per game with `client_id`.
+#: The activity carries the game's own name (see `use_activity_name`), so this
+#: name is only what Discord falls back to when a client ignores that field.
+#: An application id is public information, not a secret; users can override it
+#: in config.yaml, or per game with `client_id`.
 DEFAULT_CLIENT_ID = "1550587693673488434"
 
 #: Small icon in the corner of the cover art. Any public https URL works, so
@@ -67,8 +63,10 @@ class AppConfig:
     """Global settings. Every field has a sane default."""
 
     client_id: str = DEFAULT_CLIENT_ID
-    #: Default privacy for newly added games.
-    default_privacy: str = "auto"
+    #: Privacy mode given to newly added games. "full" shows the title and
+    #: cover for everything; "auto" hides both for titles VNDB marks 18+.
+    #: Existing games keep whatever is in their own profile.
+    default_privacy: str = "full"
     #: Second presence line when a game provides nothing more specific.
     default_status_text: str = "Reading"
     #: Put the game's name in the activity itself, so the header reads
