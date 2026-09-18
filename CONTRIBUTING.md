@@ -80,6 +80,15 @@ application, named **Visual Novel** - that name is what users see after the word
 *Playing*. An application ID is public information: it is not a secret, and it is
 committed on purpose. Only change it if the project's application is replaced.
 
+### The icon
+
+`assets/icon.png` is generated, not hand-drawn - edit `tools/make_icon.py` and
+re-run it rather than editing the PNG:
+
+```bash
+python tools/make_icon.py
+```
+
 ### Commit messages
 
 Plain and descriptive: `launcher: follow grandchildren of the launcher process`.

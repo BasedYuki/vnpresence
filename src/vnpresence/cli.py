@@ -121,6 +121,23 @@ def play(game: str, attach: bool) -> None:
     click.secho(f"\u2713 {result.title}: {format_duration(result.seconds)}", fg="green")
 
 
+@main.command("watch")
+@click.option("--interval", type=float, default=None, help="Seconds between scans.")
+@click.option("--once", is_flag=True, help="Handle one game and exit (useful for testing).")
+def watch(interval: float | None, once: bool) -> None:
+    """Watch for library games started outside VNPresence and attach to them."""
+    from .watcher import LibraryWatcher
+
+    def report(kind: str, message: str) -> None:
+        colors = {"warning": "yellow", "privacy": "yellow", "error": "red", "detected": "green"}
+        click.secho(f"[{kind}] {message}", fg=colors.get(kind))
+
+    watcher = LibraryWatcher(interval=interval)
+    if not watcher.watchable():
+        raise click.ClickException("no games to watch - add one with: vnpresence add")
+    watcher.run(on_event=report, once=once)
+
+
 @main.command("remove")
 @click.argument("game")
 def remove(game: str) -> None:

@@ -24,9 +24,13 @@ APP_NAME = "VNPresence"
 #: Users can override it in config.yaml, or per game with `client_id`.
 DEFAULT_CLIENT_ID = "1550587693673488434"
 
-#: Optional small icon in the corner of the cover art: an uploaded asset key,
-#: or any public https URL. Empty means "no small icon".
-DEFAULT_SMALL_IMAGE = ""
+#: Small icon in the corner of the cover art. Any public https URL works, so
+#: the project's own icon is served straight from the repository - no asset
+#: upload, and no bumping into Discord's 300-asset limit. Set it to "" to turn
+#: the corner icon off, or to an uploaded asset's key to use that instead.
+DEFAULT_SMALL_IMAGE = (
+    "https://raw.githubusercontent.com/BasedYuki/vnpresence/main/assets/icon-256.png"
+)
 
 
 def config_dir() -> Path:
@@ -75,8 +79,10 @@ class AppConfig:
     small_image: str = DEFAULT_SMALL_IMAGE
     #: Seconds between presence updates. Discord rate-limits to 1 per 15s.
     update_interval: float = 15.0
-    #: Seconds between process checks.
+    #: Seconds between process checks while a game is running.
     poll_interval: float = 2.0
+    #: Seconds between scans in auto-detect mode (`vnpresence watch`).
+    watch_interval: float = 5.0
     #: Treat 18+ titles as private when a game's privacy is "auto".
     nsfw_auto_private: bool = True
     #: How long VNDB responses stay cached, in days.

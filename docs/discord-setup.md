@@ -58,6 +58,25 @@ Check it with:
 vnpresence doctor
 ```
 
+## The application icon
+
+The icon of the application shows up next to the activity in some places in
+Discord. VNPresence ships one at `assets/icon.png` (1024x1024, the size Discord
+wants). To set it:
+
+1. Open your application in the developer portal.
+2. **General Information** -> **App Icon** -> upload `assets/icon.png`.
+3. Save.
+
+The little icon in the corner of the cover art is a separate thing, and it needs
+no upload at all: it is `small_image` in `config.yaml`, which takes any public
+https URL. It points at this repository's `assets/icon-256.png` by default.
+
+```yaml
+# config.yaml - turn the corner icon off, or point it anywhere
+small_image: ""
+```
+
 ## Do I need to upload images?
 
 No. Discord's *Rich Presence → Art Assets* page exists for apps that ship a fixed

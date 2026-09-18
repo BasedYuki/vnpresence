@@ -13,6 +13,7 @@ Playing a Visual Novel
 ```
 
 - Cover art and descriptions come from [VNDB](https://vndb.org) automatically
+- Auto-detect mode picks up games you start from Steam or a shortcut
 - Adding a game is one line of YAML - or two clicks in the window
 - Per-game privacy, with 18+ titles hidden by default
 - A plugin API for anything the defaults do not cover
@@ -79,6 +80,7 @@ vnpresence add "D:\VN\Steins Gate\sg.exe"   # add a game (searches VNDB for you)
 vnpresence list                             # what is in your library
 vnpresence play steins-gate                 # launch it and publish the presence
 vnpresence play steins-gate --attach        # attach to a game that is already open
+vnpresence watch                            # auto-detect any library game you start
 vnpresence search "muv luv"                 # look up VNDB ids
 vnpresence doctor                           # check Discord, VNDB, config, paths
 vnpresence plugins                          # list active plugins
@@ -231,6 +233,36 @@ Playing a Visual Novel
 │ cover  │  Chapter 3 - Ayamine route
 └────────┘  02:40:09 elapsed
 ```
+
+### Auto-detect mode
+
+`vnpresence play` starts the game for you. If you would rather start games the
+way you always have - from Steam, a shortcut, or the game's own launcher - run
+the watcher instead and forget about it:
+
+```bash
+vnpresence watch
+```
+
+It scans the running processes every few seconds, and the moment one matches a
+game in your library it attaches and publishes the presence, exactly as `play`
+would. When the game closes it goes back to watching.
+
+```
+[watch] watching 6 game(s); Ctrl+C to stop
+[detected] Steins;Gate (sg.exe)
+[presence] activity published
+[end] session ended after 2h 14m
+```
+
+Notes:
+
+- A game is matched by its executable name, or by `process_names` if you set it.
+- Games with `privacy: off` are ignored entirely - they are never even attached to.
+- One process scan covers the whole library, so a large library costs no more
+  than a small one. Change the pace with `watch_interval` in `config.yaml`.
+- Start it with Windows by putting a shortcut to `VNPresence.exe watch` in
+  `shell:startup`.
 
 ## 7. Privacy
 
