@@ -83,6 +83,7 @@ vnpresence play steins-gate --attach        # attach to a game that is already o
 vnpresence watch -b                         # auto-detect games, in the background
 vnpresence status                           # is a background watcher running?
 vnpresence stop                             # stop it
+vnpresence autostart on                     # start watching at every login
 vnpresence search "muv luv"                 # look up VNDB ids
 vnpresence doctor                           # check Discord, VNDB, config, paths
 vnpresence plugins                          # list active plugins
@@ -260,6 +261,23 @@ vnpresence stop     # stop it
 
 Without `-b` it stays in the foreground and prints what it is doing, which is
 the better way to see why a game is not being picked up. `Ctrl+C` ends that one.
+
+### Never touching a terminal
+
+The window has the same two switches, and they are all a normal install needs:
+
+| Switch | What it does |
+|---|---|
+| **Auto-detect games I start myself** | Starts and stops the background watcher |
+| **Start with Windows** | Runs the watcher every time you log in |
+
+Tick both once and you are done: add your games, start them however you like,
+and the presence takes care of itself. ("Start with Windows" adds a single
+per-user entry named `VNPresence` under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; unticking it removes
+the entry. No administrator rights, no scheduled task, nothing left behind.)
+
+The command line has the same thing: `vnpresence autostart on|off|status`.
 
 ```
 [watch] watching 6 game(s); Ctrl+C to stop

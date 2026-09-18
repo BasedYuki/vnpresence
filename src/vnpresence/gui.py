@@ -7,12 +7,15 @@ The window is a thin shell over the same API the CLI uses - no logic lives here.
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from . import startup
 from .config import AppConfig
+from .daemon import running_pid, spawn_background, stop_background
 from .launcher import LaunchError
 from .library import Library
 from .models import GameProfile, PrivacyMode
@@ -83,6 +86,29 @@ class App(tk.Tk):
         )
         combo.pack(side="left", padx=6)
         combo.bind("<<ComboboxSelected>>", lambda _e: self.apply_privacy())
+
+        # The two switches that make the app hands-off: no terminal needed.
+        switches = ttk.Frame(frame)
+        switches.pack(fill="x", pady=(10, 0))
+
+        self.watch_var = tk.BooleanVar(value=running_pid() is not None)
+        ttk.Checkbutton(
+            switches,
+            text="Auto-detect games I start myself",
+            variable=self.watch_var,
+            command=self.toggle_watch,
+        ).pack(anchor="w")
+
+        self.startup_var = tk.BooleanVar(value=self._startup_state())
+        self.startup_box = ttk.Checkbutton(
+            switches,
+            text="Start with Windows",
+            variable=self.startup_var,
+            command=self.toggle_startup,
+        )
+        self.startup_box.pack(anchor="w")
+        if sys.platform != "win32":
+            self.startup_box.state(["disabled"])
 
         self.status = tk.StringVar(value="Ready")
         ttk.Label(frame, textvariable=self.status, foreground="#555").pack(
@@ -157,6 +183,56 @@ class App(tk.Tk):
         self.library.save(profile)
         self.refresh()
         self.status.set(PRIVACY_HELP[profile.privacy])
+
+    # -- the two switches -------------------------------------------------
+    def _startup_state(self) -> bool:
+        try:
+            return startup.is_enabled()
+        except Exception:  # pragma: no cover - registry trouble
+            log.debug("could not read the autostart setting", exc_info=True)
+            return False
+
+    def toggle_watch(self) -> None:
+        """Start or stop the background watcher."""
+        if self.watch_var.get():
+            if running_pid() is not None:
+                self.status.set("Already watching in the background.")
+                return
+            if not self.library.load_all():
+                self.watch_var.set(False)
+                messagebox.showinfo("VNPresence", "Add a game first.")
+                return
+            try:
+                pid = spawn_background()
+            except Exception as exc:
+                self.watch_var.set(False)
+                messagebox.showerror("VNPresence", f"Could not start watching:\n{exc}")
+                return
+            self.status.set(
+                f"Watching in the background (pid {pid}) - start a game any way you like."
+            )
+        else:
+            stopped = stop_background()
+            self.status.set("Stopped watching." if stopped else "Nothing was watching.")
+
+    def toggle_startup(self) -> None:
+        """Add or remove VNPresence from the Windows startup entries."""
+        wanted = self.startup_var.get()
+        try:
+            startup.set_enabled(wanted)
+        except startup.StartupUnsupported as exc:
+            self.startup_var.set(False)
+            messagebox.showinfo("VNPresence", str(exc))
+            return
+        except Exception as exc:  # pragma: no cover - registry trouble
+            self.startup_var.set(not wanted)
+            messagebox.showerror("VNPresence", f"Could not change that setting:\n{exc}")
+            return
+        self.status.set(
+            "VNPresence will start watching when you log in."
+            if wanted
+            else "VNPresence will no longer start with Windows."
+        )
 
     def play_selected(self) -> None:
         if self.worker and self.worker.is_alive():

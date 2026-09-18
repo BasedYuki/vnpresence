@@ -172,6 +172,27 @@ def stop() -> None:
     click.secho(f"✓ stopped the watcher (pid {pid})", fg="green")
 
 
+@main.command("autostart")
+@click.argument("action", type=click.Choice(["on", "off", "status"]), default="status")
+def autostart(action: str) -> None:
+    """Start watching automatically when you log in to Windows."""
+    from . import startup
+
+    try:
+        if action == "on":
+            command = startup.enable()
+            click.secho("✓ VNPresence will start with Windows", fg="green")
+            click.echo(f"  {command}")
+        elif action == "off":
+            startup.disable()
+            click.secho("✓ removed from Windows startup", fg="green")
+        else:
+            enabled = startup.is_enabled()
+            click.echo("Enabled." if enabled else "Not enabled.")
+    except startup.StartupUnsupported as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @main.command("status")
 def status() -> None:
     """Say whether a background watcher is running."""
