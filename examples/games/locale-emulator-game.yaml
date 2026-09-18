@@ -1,0 +1,13 @@
+# A game started through Locale Emulator (or any wrapper that exits immediately).
+# The wrapper dies within a second, so name the process that actually runs the
+# game and give it a longer grace period.
+title: Example VN
+path: C:\Program Files\Locale Emulator\LEProc.exe
+args:
+  - -runas
+  - "{3F449B2E-...}"
+  - D:\VN\ExampleVN\game.exe
+process_names:
+  - game.exe
+launcher_grace: 20
+vndb_id: v12345

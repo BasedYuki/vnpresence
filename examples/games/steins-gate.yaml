@@ -1,0 +1,6 @@
+# A straightforward game: VNDB supplies the title, cover art and description.
+# Copy this into %APPDATA%\VNPresence\games\ and set `path` to your own install.
+title: Steins;Gate
+path: D:\VN\Steins Gate\sg.exe
+vndb_id: v2002
+privacy: auto

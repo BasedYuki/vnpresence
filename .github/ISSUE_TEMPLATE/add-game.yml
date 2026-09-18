@@ -1,0 +1,40 @@
+name: Game does not track correctly
+description: A visual novel whose presence disappears, or that needs a quirk
+title: "[game] "
+labels: ["game-profile"]
+body:
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      placeholder: Steins;Gate
+    validations:
+      required: true
+  - type: input
+    id: vndb
+    attributes:
+      label: VNDB id or link
+      placeholder: v2002
+  - type: textarea
+    id: what-happens
+    attributes:
+      label: What happens
+      placeholder: The presence shows for one second after launch and then disappears.
+    validations:
+      required: true
+  - type: textarea
+    id: profile
+    attributes:
+      label: Your profile YAML
+      description: From %APPDATA%\VNPresence\games\ - remove paths you do not want to share.
+      render: yaml
+  - type: textarea
+    id: verbose
+    attributes:
+      label: Output of `vnpresence play <game> -v`
+      render: shell
+  - type: input
+    id: launcher
+    attributes:
+      label: Does it start through a launcher?
+      placeholder: Locale Emulator / a config tool / no

@@ -1,0 +1,33 @@
+name: Bug report
+description: Something else is broken
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What went wrong
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `vnpresence doctor`
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.1.0 (.exe) / installed with pip
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: Windows 11

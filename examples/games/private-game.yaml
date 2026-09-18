@@ -1,0 +1,7 @@
+# A title you would rather not broadcast: friends only see the neutral activity
+# ("Reading a visual novel"), with no title, cover or link. `auto` would do this
+# on its own for anything VNDB marks 18+, but `private` is explicit.
+title: Example 18+ VN
+path: D:\VN\Example\example.exe
+vndb_id: v54321
+privacy: private
