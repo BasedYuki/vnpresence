@@ -17,6 +17,10 @@ and a link to its VNDB page - the way a normal game does.
 - A plugin API for anything the defaults do not cover
 - MIT licensed, no telemetry, nothing phoning home except VNDB
 
+**Get in touch** — Discord `reevengeee` · [@Yukisobased](https://x.com/Yukisobased) ·
+[open an issue](https://github.com/BasedYuki/vnpresence/issues) for bugs and for
+games that will not track.
+
 ---
 
 ## Table of contents
@@ -30,8 +34,7 @@ and a link to its VNDB page - the way a normal game does.
 7. [Privacy](#7-privacy)
 8. [Plugins](#8-plugins)
 9. [Troubleshooting](#9-troubleshooting)
-10. [Contact](#10-contact)
-11. [Contributing](#11-contributing)
+10. [Contributing](#10-contributing)
 
 ---
 
@@ -358,17 +361,7 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | Elapsed time restarts | The tracked process restarted - usually a launcher; set `process_names` |
 | Top line says "a Visual Novel", not the game | That is Discord's behaviour, not a bug - see [section 5](#5-discord-application--client-id) |
 
-## 10. Contact
-
-Questions, a game that will not track, or an idea - reach me anywhere:
-
-| | |
-|---|---|
-| GitHub issues | <https://github.com/BasedYuki/vnpresence/issues> (best for bugs) |
-| Discord | `reevengeee` |
-| Twitter / X | [@Yukisobased](https://x.com/Yukisobased) |
-
-## 11. Contributing
+## 10. Contributing
 
 Contributions are very welcome, especially:
 
