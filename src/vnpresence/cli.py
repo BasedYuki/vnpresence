@@ -12,7 +12,10 @@ from . import __version__
 from .config import AppConfig, config_dir, config_file, games_dir
 from .launcher import LaunchError
 from .library import Library
-from .models import GameProfile, PrivacyMode, normalise_vndb_id
+from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
+from .notes import clear_note, read_note, write_note
+from .playtime import Playtime, percent
+from .playtime import fraction as progress_fraction
 from .plugins import build_registry
 from .session import GameSession, format_duration
 from .titles import guess_title
@@ -69,6 +72,10 @@ def add_game(
     if vndb_id:
         vndb_id = normalise_vndb_id(vndb_id)
         metadata = _lookup(vndb_id, config)
+    elif search_term and looks_like_vndb_ref(search_term):
+        # A link pasted into --search is not a search term, it is the answer.
+        vndb_id = normalise_vndb_id(search_term)
+        metadata = _lookup(vndb_id, config)
     elif search_term or not title:
         term = search_term or guessed
         metadata, vndb_id = _search_interactive(term, config)
@@ -124,7 +131,130 @@ def play(game: str, attach: bool) -> None:
         result = GameSession(profile).run(attach=attach, on_event=report)
     except LaunchError as exc:
         raise click.ClickException(str(exc)) from exc
-    click.secho(f"\u2713 {result.title}: {format_duration(result.seconds)}", fg="green")
+    summary = f"\u2713 {result.title}: {format_duration(result.seconds)}"
+    if result.total_seconds > result.seconds:
+        summary += f" (total {format_duration(result.total_seconds)})"
+    if result.progress is not None:
+        summary += f" - about {percent(result.progress)} in"
+    click.secho(summary, fg="green")
+
+
+@main.command("link")
+@click.argument("game")
+@click.argument("reference")
+@click.option("--keep-title", is_flag=True, help="Keep the current title instead of VNDB's.")
+def link(game: str, reference: str, keep_title: bool) -> None:
+    """Point a game at a VNDB entry, by link or id.
+
+    Use this when the name search picked the wrong entry - a novel and its
+    sequel often share a name, and only the link tells them apart:
+
+        vnpresence link rewrite https://vndb.org/v2400
+    """
+    library = Library()
+    profile = library.find(game)
+    if profile is None:
+        raise click.ClickException(f"no game matches {game!r} (try: vnpresence list)")
+    try:
+        vndb_id = normalise_vndb_id(reference)
+    except ValueError as exc:
+        raise click.ClickException(
+            f"{reference!r} is not a VNDB link or id (expected something like "
+            "v2400 or https://vndb.org/v2400)"
+        ) from exc
+
+    config = AppConfig.load()
+    metadata = _lookup(vndb_id, config)
+    if metadata is None:
+        raise click.ClickException(f"VNDB has nothing at {vndb_id}")
+
+    profile.vndb_id = vndb_id
+    if not keep_title:
+        profile.title = metadata.title
+    library.save(profile)
+    click.secho(f"✓ {profile.title} -> {metadata.url}", fg="green")
+    if metadata.nsfw and profile.privacy is PrivacyMode.AUTO:
+        click.secho("  VNDB marks this 18+, so 'auto' privacy will hide it.", fg="yellow")
+
+
+@main.command("note")
+@click.argument("game")
+@click.argument("text", nargs=-1)
+@click.option("--clear", "clear", is_flag=True, help="Remove the note.")
+def note(game: str, text: tuple[str, ...], clear: bool) -> None:
+    """Set the route or chapter shown for a game.
+
+    A running session picks the change up within one update, so this works
+    mid-read:
+
+        vnpresence note muv-luv "Chapter 3 - Ayamine route"
+    """
+    profile = Library().find(game)
+    if profile is None:
+        raise click.ClickException(f"no game matches {game!r} (try: vnpresence list)")
+    if clear:
+        removed = clear_note(profile.id)
+        click.secho(
+            f"✓ cleared the note for {profile.title}" if removed else "There was no note.",
+            fg="green" if removed else None,
+        )
+        return
+    if not text:
+        current = read_note(profile.id)
+        click.echo(current if current else f"No note for {profile.title}.")
+        return
+    written = " ".join(text)
+    write_note(profile.id, written)
+    click.secho(f"✓ {profile.title}: {written}", fg="green")
+
+
+@main.command("stats")
+@click.argument("game", required=False)
+def stats(game: str | None) -> None:
+    """Show how long each game has been read, and roughly how far in that is."""
+    library = Library()
+    profiles = library.load_all()
+    if game:
+        found = library.find(game)
+        if found is None:
+            raise click.ClickException(f"no game matches {game!r}")
+        profiles = [found]
+    if not profiles:
+        click.echo("No games yet.")
+        return
+
+    history = Playtime().load()
+    config = AppConfig.load()
+    width = max(len(p.title) for p in profiles)
+    shown = 0
+    for profile in profiles:
+        entry = history.get(profile.id)
+        if entry is None:
+            continue
+        shown += 1
+        line = (
+            f"{profile.title.ljust(width)}  {format_duration(entry.seconds).rjust(8)}"
+            f"  {entry.sessions} session{'s' if entry.sessions != 1 else ''}"
+        )
+        estimate = _progress_for(profile, entry.seconds, config)
+        if estimate:
+            line += f"  ~{estimate}"
+        click.echo(line)
+    if not shown:
+        click.echo("Nothing read yet - play something first.")
+
+
+def _progress_for(profile: GameProfile, seconds: float, config: AppConfig):
+    """The progress string for one game, or None if it cannot be worked out."""
+    if not profile.vndb_id:
+        return None
+    try:
+        metadata = VNDBClient(cache_days=config.cache_days).get(profile.vndb_id)
+    except VNDBError:
+        return None
+    if metadata is None:
+        return None
+    return percent(progress_fraction(seconds, metadata.length_minutes))
 
 
 @main.command("watch")
@@ -330,23 +460,43 @@ def _search_interactive(term: str, config: AppConfig):
     if not results:
         click.secho(f"! nothing on VNDB matches {term!r}", fg="yellow")
         retry = click.prompt(
-            "Type the game's name to search again (or press Enter to skip)",
+            "Type another name, paste a VNDB link (or press Enter to skip)",
             default="",
             show_default=False,
         ).strip()
         if retry:
-            return _search_interactive(retry, config)
+            return _resolve_term(retry, config)
         return None, None
     click.echo(f"VNDB matches for {term!r}:")
     for index, item in enumerate(results, start=1):
         flag = " [18+]" if item.nsfw else ""
         click.echo(f"  {index}. {item.title}{flag}")
-    click.echo("  0. none of these")
+    click.echo("  0. none of these - type a name or paste a VNDB link instead")
     choice = click.prompt("Pick one", type=click.IntRange(0, len(results)), default=1)
     if choice == 0:
-        return None, None
+        # Sequels share their parent's name, so no amount of re-searching
+        # separates them; the link is the way out.
+        typed = click.prompt(
+            "Name or VNDB link (Enter to skip)", default="", show_default=False
+        ).strip()
+        return _resolve_term(typed, config) if typed else (None, None)
     chosen = results[choice - 1]
     return chosen, (chosen.url or "").rsplit("/", 1)[-1] or None
+
+
+def _resolve_term(term: str, config: AppConfig):
+    """Treat the text as a VNDB link if it is one, and as a name otherwise."""
+    if not looks_like_vndb_ref(term):
+        return _search_interactive(term, config)
+    try:
+        vndb_id = normalise_vndb_id(term)
+    except ValueError:
+        return _search_interactive(term, config)
+    metadata = _lookup(vndb_id, config)
+    if metadata is None:
+        click.secho(f"! VNDB has nothing at {vndb_id}", fg="yellow")
+        return None, None
+    return metadata, vndb_id
 
 
 if __name__ == "__main__":  # pragma: no cover

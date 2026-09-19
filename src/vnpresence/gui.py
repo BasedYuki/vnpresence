@@ -17,7 +17,8 @@ from .config import AppConfig
 from .daemon import running_pid, spawn_background, stop_background
 from .launcher import LaunchError
 from .library import Library
-from .models import GameProfile, PrivacyMode
+from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
+from .notes import read_note, write_note
 from .session import GameSession, format_duration
 from .titles import guess_title
 from .vndb import VNDBClient, VNDBError
@@ -65,12 +66,16 @@ class App(tk.Tk):
             self.tree.column(column, width=width, anchor="w")
         self.tree.pack(fill="both", expand=True, side="top")
         self.tree.bind("<Double-1>", lambda _event: self.play_selected())
+        self.tree.bind("<<TreeviewSelect>>", lambda _event: self.load_note())
 
         buttons = ttk.Frame(frame)
         buttons.pack(fill="x", pady=(10, 4))
         ttk.Button(buttons, text="Play", command=self.play_selected).pack(side="left")
         ttk.Button(buttons, text="Add game…", command=self.add_game).pack(side="left", padx=4)
         ttk.Button(buttons, text="Remove", command=self.remove_selected).pack(side="left")
+        ttk.Button(buttons, text="VNDB link…", command=self.relink_selected).pack(
+            side="left", padx=4
+        )
         ttk.Button(buttons, text="Stop", command=self.stop_session).pack(side="left", padx=4)
 
         privacy_row = ttk.Frame(frame)
@@ -99,6 +104,19 @@ class App(tk.Tk):
         )
         default_combo.pack(side="left", padx=6)
         default_combo.bind("<<ComboboxSelected>>", lambda _e: self.apply_default_privacy())
+
+        # No engine reliably says which route you are on, so the reader can.
+        # Typing here while a game is running changes the activity within one
+        # update - there is nothing to restart.
+        note_row = ttk.Frame(frame)
+        note_row.pack(fill="x", pady=(10, 0))
+        ttk.Label(note_row, text="Route / chapter:").pack(side="left")
+        self.note_var = tk.StringVar()
+        entry = ttk.Entry(note_row, textvariable=self.note_var)
+        entry.pack(side="left", fill="x", expand=True, padx=6)
+        entry.bind("<Return>", lambda _e: self.apply_note())
+        ttk.Button(note_row, text="Set", command=self.apply_note).pack(side="left")
+        ttk.Button(note_row, text="Clear", command=self.clear_note).pack(side="left", padx=4)
 
         # The two switches that make the app hands-off: no terminal needed.
         switches = ttk.Frame(frame)
@@ -160,10 +178,16 @@ class App(tk.Tk):
         if metadata is None or not messagebox.askyesno(
             "VNDB match",
             f"Is this the right game?\n\n{metadata.title}" if metadata else
-            f"Nothing on VNDB matches “{guess}”.\n\nSearch by another name?",
+            f"Nothing on VNDB matches “{guess}”.\n\nTry another name or a VNDB link?",
         ):
+            # Offering the link here is the point: if the search picked the
+            # sequel, no other name will fix it - the two share one.
             typed = simpledialog.askstring(
-                "Game name", "Type the game's name:", initialvalue=guess, parent=self
+                "Game name",
+                "Type the game's name, or paste its VNDB link\n"
+                "(e.g. https://vndb.org/v2002):",
+                initialvalue=guess,
+                parent=self,
             )
             if typed:
                 metadata, vndb_id = self._lookup(typed)
@@ -187,11 +211,23 @@ class App(tk.Tk):
         self.status.set(f"Added {title}")
 
     def _lookup(self, term: str):
-        """Search VNDB for a name; returns (metadata, vndb_id) or (None, None)."""
+        """Find a game on VNDB by name **or** by link; (metadata, id) or (None, None).
+
+        A name is a guess and a link is not, so a pasted VNDB URL skips the
+        search entirely. That is the only way to tell a novel from a sequel
+        that shares its name - "Rewrite" and "Rewrite+" both answer to
+        "Rewrite", and the search cannot know which one is on disk.
+        """
+        client = VNDBClient(cache_days=self.config_data.cache_days)
         try:
-            results = VNDBClient(cache_days=self.config_data.cache_days).search(term, limit=1)
-        except VNDBError as exc:
-            log.warning("VNDB search failed: %s", exc)
+            if looks_like_vndb_ref(term):
+                metadata = client.get(normalise_vndb_id(term))
+                if metadata is None:
+                    return None, None
+                return metadata, (metadata.url or "").rsplit("/", 1)[-1] or None
+            results = client.search(term, limit=1)
+        except (VNDBError, ValueError) as exc:
+            log.warning("VNDB lookup failed: %s", exc)
             return None, None
         if not results:
             return None, None
@@ -205,6 +241,57 @@ class App(tk.Tk):
         if messagebox.askyesno("Remove", f"Remove {profile.title} from the library?"):
             self.library.remove(profile.id)
             self.refresh()
+
+    def relink_selected(self) -> None:
+        """Repoint a game at the right VNDB entry.
+
+        The name search cannot tell a novel from its sequel when they share a
+        name, so this is the fix for "it found Rewrite, I am playing Rewrite+".
+        """
+        profile = self.selected_profile()
+        if profile is None:
+            messagebox.showinfo("VNPresence", "Pick a game first.")
+            return
+        typed = simpledialog.askstring(
+            "VNDB link",
+            f"Paste the VNDB link for {profile.title}\n(e.g. https://vndb.org/v2400):",
+            initialvalue=f"https://vndb.org/{profile.vndb_id}" if profile.vndb_id else "",
+            parent=self,
+        )
+        if not typed:
+            return
+        metadata, vndb_id = self._lookup(typed)
+        if metadata is None or vndb_id is None:
+            messagebox.showerror(
+                "VNPresence", f"VNDB has nothing at “{typed}”, so nothing was changed."
+            )
+            return
+        profile.vndb_id = vndb_id
+        profile.title = metadata.title
+        self.library.save(profile)
+        self.refresh()
+        self.status.set(f"{profile.title} is now linked to {metadata.url}")
+
+    def apply_note(self) -> None:
+        """Save what is typed in the route box for the selected game."""
+        profile = self.selected_profile()
+        if profile is None:
+            self.status.set("Pick a game first.")
+            return
+        text = self.note_var.get().strip()
+        write_note(profile.id, text)
+        self.status.set(
+            f"{profile.title}: {text}" if text else f"Cleared the note for {profile.title}."
+        )
+
+    def clear_note(self) -> None:
+        self.note_var.set("")
+        self.apply_note()
+
+    def load_note(self) -> None:
+        """Show the selected game's note, so it can be edited rather than retyped."""
+        profile = self.selected_profile()
+        self.note_var.set(read_note(profile.id) or "" if profile else "")
 
     def apply_privacy(self) -> None:
         profile = self.selected_profile()

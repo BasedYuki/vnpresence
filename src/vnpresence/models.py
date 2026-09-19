@@ -62,6 +62,7 @@ class GameProfile:
     status_text: str | None = None  # overrides the second presence line
     client_id: str | None = None  # advanced: per-game Discord application
     show_buttons: bool | None = None  # None -> follow global config
+    show_progress: bool | None = None  # None -> follow global config
 
     # Plugins
     plugin: str | None = None  # name of a StateProvider plugin
@@ -102,6 +103,22 @@ class GameProfile:
         return out
 
 
+def looks_like_vndb_ref(text: str) -> bool:
+    """True when this is a VNDB link or id rather than a game's name.
+
+    Searching by name cannot separate a novel from its sequel when they share
+    one - "Rewrite" and "Rewrite+" - so anywhere a name is asked for, a link is
+    accepted instead. The test is deliberately strict: a bare id has to be the
+    whole string, or a title like "Clannad v2" would be read as an id.
+    """
+    text = text.strip()
+    if not text:
+        return False
+    if "vndb.org" in text.lower():
+        return True
+    return re.fullmatch(r"v\d+", text, flags=re.IGNORECASE) is not None
+
+
 def normalise_vndb_id(raw: str) -> str:
     """Accept ``17``, ``v17`` or a full VNDB URL and return ``v17``."""
     raw = raw.strip()
@@ -125,6 +142,11 @@ class GameMetadata:
     languages: list[str] = field(default_factory=list)
     platforms: list[str] = field(default_factory=list)
     length: str | None = None
+    #: Expected play time in minutes. VNDB's average of user-reported times
+    #: when the novel has votes, otherwise the middle of its length bucket -
+    #: ``length_votes`` is how you tell the two apart.
+    length_minutes: int | None = None
+    length_votes: int = 0
     rating: float | None = None
     nsfw: bool = False
     url: str | None = None
@@ -140,6 +162,8 @@ class GameMetadata:
             "languages": list(self.languages),
             "platforms": list(self.platforms),
             "length": self.length,
+            "length_minutes": self.length_minutes,
+            "length_votes": self.length_votes,
             "rating": self.rating,
             "nsfw": self.nsfw,
             "url": self.url,
@@ -163,5 +187,9 @@ class PresenceState:
     status_text: str | None = None
     small_text: str | None = None
     small_image: str | None = None
+    #: How far into the novel the reader is, 0.0-1.0. The session fills this in
+    #: from the play time it has recorded; a plugin that knows better - a save
+    #: file, a chapter count - can set it directly and overrule the estimate.
+    progress: float | None = None
     #: Restart the elapsed timer from this unix timestamp (rarely needed).
     start_timestamp: int | None = None

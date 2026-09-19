@@ -1,6 +1,6 @@
 """VNPresence - Discord Rich Presence for visual novels."""
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 from .models import GameMetadata, GameProfile, PresenceState, PrivacyMode
 from .providers.base import MetadataProvider, PresenceFormatter, StateProvider

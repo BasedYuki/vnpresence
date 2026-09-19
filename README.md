@@ -13,6 +13,8 @@ and a link to its VNDB page - the way a normal game does.
 - Cover art and descriptions come from [VNDB](https://vndb.org) automatically
 - Auto-detect mode picks up games you start from Steam or a shortcut
 - Adding a game is one line of YAML - or two clicks in the window
+- Type the route or chapter you are on and it shows up straight away
+- An estimated "34% in", from the time you have read against VNDB's average
 - Per-game privacy, with a one-switch option to hide 18+ titles
 - A plugin API for anything the defaults do not cover
 - MIT licensed, no telemetry, nothing phoning home except VNDB
@@ -31,10 +33,11 @@ games that will not track.
 4. [Adding visual novels](#4-adding-visual-novels)
 5. [Discord application / client id](#5-discord-application--client-id)
 6. [What the presence looks like](#6-what-the-presence-looks-like)
-7. [Privacy](#7-privacy)
-8. [Plugins](#8-plugins)
-9. [Troubleshooting](#9-troubleshooting)
-10. [Contributing](#10-contributing)
+7. [Routes, chapters and progress](#7-routes-chapters-and-progress)
+8. [Privacy](#8-privacy)
+9. [Plugins](#9-plugins)
+10. [Troubleshooting](#10-troubleshooting)
+11. [Contributing](#11-contributing)
 
 ---
 
@@ -90,6 +93,9 @@ vnpresence watch -b                         # auto-detect games, in the backgrou
 vnpresence status                           # is a background watcher running?
 vnpresence stop                             # stop it
 vnpresence autostart on                     # start watching at every login
+vnpresence note steins-gate "Chapter 3"     # say which route/chapter you are on
+vnpresence stats                            # how long you have read, and how far in
+vnpresence link rewrite https://vndb.org/v7738   # fix a wrong VNDB match
 vnpresence search "muv luv"                 # look up VNDB ids
 vnpresence doctor                           # check Discord, VNDB, config, paths
 vnpresence plugins                          # list active plugins
@@ -107,6 +113,8 @@ the window) to end the session early.
 | Config | `%APPDATA%\VNPresence\config.yaml` | `~/.config/vnpresence/config.yaml` |
 | Games | `%APPDATA%\VNPresence\games\*.yaml` | `~/.config/vnpresence/games/*.yaml` |
 | VNDB cache | `%APPDATA%\VNPresence\cache\` | `~/.cache/vnpresence/` |
+| Reading time | `%APPDATA%\VNPresence\playtime.yaml` | `~/.config/vnpresence/playtime.yaml` |
+| Route notes | `%APPDATA%\VNPresence\notes\` | `~/.config/vnpresence/notes/` |
 
 Set `VNPRESENCE_HOME` to keep everything in one portable folder next to the `.exe`.
 
@@ -128,6 +136,26 @@ placeholder, the folder name is used instead -
 `K:\Games\Rewrite\SiglusEngine_SteamEN.exe` is added as **Rewrite**. If VNDB
 still finds nothing, you are asked to type the name yourself rather than being
 left with a junk title.
+
+### When the search picks the wrong one
+
+Sequels usually share their parent's name - *Rewrite* and *Rewrite+*, *Clannad*
+and *Clannad: After Story* - and no search by name can tell which one is on your
+disk. So anywhere VNPresence asks for a name, a VNDB link works instead:
+
+```bash
+vnpresence add "K:\Games\Rewrite+\game.exe" --vndb https://vndb.org/v7738
+```
+
+Already added the wrong one? Repoint it - nothing else about the game changes:
+
+```bash
+vnpresence link rewrite https://vndb.org/v7738
+vnpresence link rewrite v7738 --keep-title   # keep the name you chose
+```
+
+In the window, **VNDB link…** does the same for the selected game, and the
+"is this the right game?" prompt takes a link as readily as a name.
 
 ### The profile file
 
@@ -155,11 +183,12 @@ Every key it accepts:
 | `description` | from VNDB | Overrides the VNDB description |
 | `process_names` | `[]` | The **real** process name if a launcher starts the game |
 | `launcher_grace` | `12` | Seconds to wait for that real process to appear |
-| `privacy` | `auto` if the key is missing; games added through VNPresence get `full` | `auto` / `full` / `private` / `off` - see [Privacy](#7-privacy) |
+| `privacy` | `auto` if the key is missing; games added through VNPresence get `full` | `auto` / `full` / `private` / `off` - see [Privacy](#8-privacy) |
 | `status_text` | `Reading` | The second presence line |
 | `show_buttons` | global | Show the "View on VNDB" button |
+| `show_progress` | global | Show the estimated percentage for this game |
 | `client_id` | global | A Discord application just for this game (advanced) |
-| `plugin` | - | Name of a state plugin (see [Plugins](#8-plugins)) |
+| `plugin` | - | Name of a state plugin (see [Plugins](#9-plugins)) |
 | `plugin_options` | `{}` | Options passed to that plugin |
 
 ### Games that use a launcher (Locale Emulator, config tools, packers)
@@ -271,7 +300,61 @@ Playing Muv-Luv Alternative
 └────────┘  02:40:09 elapsed
 ```
 
-## 7. Privacy
+## 7. Routes, chapters and progress
+
+The elapsed timer says how long this session has been running. It does not say
+which route you are on, or how far into a sixty-hour novel you are. Two things
+fill that in.
+
+### The route or chapter you type in
+
+No visual novel engine reliably reports where you are in the story, and most
+report nothing at all. So instead of guessing, VNPresence lets you say it:
+
+```bash
+vnpresence note rewrite "Kotori route"
+vnpresence note rewrite            # what does it say right now?
+vnpresence note rewrite --clear    # back to "Reading"
+```
+
+In the window, the **Route / chapter** box does the same thing. Either way a
+running session picks the change up within one update - about fifteen seconds -
+so you can set it as you go without restarting anything.
+
+```
+Playing Rewrite+
+┌────────┐  Rewrite+
+│ cover  │  Kotori route              <- your note, in place of "Reading"
+└─────(◍)┘  Very long (> 50h) • 2011 • 34%
+```
+
+The note lives in `notes\<game>.txt`, not in the game's profile: profiles are
+the part of a library people copy and share, and your route notes have no
+business travelling with them.
+
+### The progress estimate
+
+VNDB publishes the average play time its users report for each novel.
+VNPresence remembers how long you have actually read - across every session,
+not just tonight - and shows the two as a percentage:
+
+```bash
+vnpresence stats
+# Rewrite+     12h 40m  7 sessions  ~34%
+# Clannad       2h 05m  1 session   ~4%
+```
+
+**It is an estimate and it says so.** Reading speed varies enormously, routes
+get skipped, text gets re-read, and a novel with no reported play times falls
+back to the middle of its VNDB length bracket, which is a far coarser guess. It
+is a sense of where you are, not a save file.
+
+Turn it off for everything with `show_progress: false` in `config.yaml`, or for
+one game with the same key in its profile. A plugin that knows the real figure -
+from a save file, from a chapter count - can set it directly and the estimate
+steps aside.
+
+## 8. Privacy
 
 Most visual novels carry adult content, and a Rich Presence is visible to every
 friend on your list. Privacy is per game:
@@ -302,7 +385,7 @@ Turn the automatic filter off globally with `nsfw_auto_private: false` in
 `config.yaml`. VNPresence sends nothing anywhere except Discord (locally) and
 VNDB (title lookups).
 
-## 8. Plugins
+## 9. Plugins
 
 Adding a **game** needs no code. Adding **behaviour** does, and that is what the
 plugin API is for. A plugin is a normal Python package that registers one of
@@ -348,7 +431,7 @@ plugin_options:
 The core never needs to change. Full guide with more examples:
 [`docs/writing-plugins.md`](docs/writing-plugins.md).
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 
@@ -358,13 +441,15 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | Presence disappears a second after launch | The game uses a launcher - set `process_names` (see [section 4](#4-adding-visual-novels)) |
 | Title is the engine's name (`SiglusEngine`, `reallive`) | An old profile from before 0.5.0 - fix the title and `vndb_id` in its YAML, or remove and add the game again |
 | Title shows but no cover art | No `vndb_id` on the profile, or VNDB was unreachable when it was added - run `vnpresence add --vndb v2002 ...` again or set `image_url` |
+| It found the sequel, not the game you are playing (or the other way round) | They share a name; a search cannot tell them apart. Repoint it with `vnpresence link <game> <vndb link>`, or **VNDB link…** in the window |
+| The percentage looks wrong | It is an estimate from your reading time against VNDB's average - see [section 7](#7-routes-chapters-and-progress). Turn it off with `show_progress: false` |
 | You see the presence but no buttons | Discord does not render buttons on **your own** profile - ask a friend, or check from another account |
 | "requires elevation" / WinError 740 | The game demands administrator rights. VNPresence re-launches it through a UAC prompt - approve it. To stop being asked every time, right-click the .exe → Properties → Compatibility, or run VNPresence as administrator |
 | "VNDB rate limit reached" | 200 requests / 5 minutes. Wait; cached games keep working |
 | Elapsed time restarts | The tracked process restarted - usually a launcher; set `process_names` |
 | Top line says "a Visual Novel", not the game | That is Discord's behaviour, not a bug - see [section 5](#5-discord-application--client-id) |
 
-## 10. Contributing
+## 11. Contributing
 
 Contributions are very welcome, especially:
 

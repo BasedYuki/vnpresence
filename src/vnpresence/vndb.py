@@ -16,6 +16,7 @@ import requests
 
 from .config import cache_dir
 from .models import GameMetadata, normalise_vndb_id
+from .playtime import BUCKET_MINUTES
 
 log = logging.getLogger(__name__)
 
@@ -24,9 +25,14 @@ USER_AGENT = "VNPresence (+https://github.com/BasedYuki/vnpresence)"
 
 FIELDS = (
     "id, title, alttitle, image.url, image.sexual, image.violence, "
-    "description, released, languages, platforms, length, rating, "
+    "description, released, languages, platforms, length, length_minutes, "
+    "length_votes, rating, "
     "tags.name, tags.category, tags.rating, tags.spoiler"
 )
+
+#: Bumped whenever the shape of a cached entry changes, so an old cache is
+#: refetched instead of silently missing the new fields.
+CACHE_SCHEMA = 2
 
 LENGTH_LABELS = {
     1: "Very short (< 2h)",
@@ -111,11 +117,15 @@ class VNDBClient:
         if age_days > self.cache_days:
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return None
+        if not isinstance(data, dict) or data.get("_schema") != CACHE_SCHEMA:
+            return None  # written by an older version: fetch it again
+        return data
 
     def _write_cache(self, vndb_id: str, data: dict[str, Any]) -> None:
+        data = {**data, "_schema": CACHE_SCHEMA}
         try:
             self.cache_path.mkdir(parents=True, exist_ok=True)
             self._cache_file(vndb_id).write_text(
@@ -130,6 +140,15 @@ def parse_vn(item: dict[str, Any]) -> GameMetadata:
     image = item.get("image") or {}
     length = item.get("length")
     rating = item.get("rating")
+    votes = item.get("length_votes")
+    votes = int(votes) if isinstance(votes, (int, float)) else 0
+    minutes = item.get("length_minutes")
+    minutes = int(minutes) if isinstance(minutes, (int, float)) and minutes > 0 else None
+    if minutes is None and isinstance(length, int):
+        # Nobody reported a play time: fall back to the middle of the bucket,
+        # and leave length_votes at 0 so the guess is recognisable as one.
+        minutes = BUCKET_MINUTES.get(length)
+        votes = 0
     return GameMetadata(
         title=item.get("title") or item.get("alttitle") or "Unknown",
         alt_title=item.get("alttitle"),
@@ -139,6 +158,8 @@ def parse_vn(item: dict[str, Any]) -> GameMetadata:
         languages=list(item.get("languages") or []),
         platforms=list(item.get("platforms") or []),
         length=LENGTH_LABELS.get(length) if isinstance(length, int) else None,
+        length_minutes=minutes,
+        length_votes=votes,
         rating=round(rating / 10, 1) if isinstance(rating, (int, float)) else None,
         nsfw=is_nsfw(item),
         url=f"https://vndb.org/{item.get('id')}" if item.get("id") else None,

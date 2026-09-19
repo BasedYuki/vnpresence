@@ -84,6 +84,10 @@ class AppConfig:
     private_title: str = "Reading a visual novel"
     #: Show the "View on VNDB" button.
     show_buttons: bool = True
+    #: Show an estimated "34%" next to the VNDB details, worked out from how
+    #: long this game has been read against the time VNDB users report for it.
+    #: It is an estimate: reading speed varies and routes get skipped.
+    show_progress: bool = True
     #: Small image (icon) shown in the corner of the cover art.
     small_image: str = DEFAULT_SMALL_IMAGE
     #: Tooltip on that small icon. The game's name is already the header and

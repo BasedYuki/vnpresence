@@ -4,8 +4,8 @@ Discord's layout, and what we put where::
 
     Playing Steins;Gate       <- name         (the game; see use_activity_name)
     [cover]  Steins;Gate      <- the card's own title line
-             Reading          <- details      (status text / plugin state)
-             Long • 2009      <- state        (what VNDB knows)
+             Reading          <- details      (status text / note / plugin state)
+             Long • 2009 • 34%<- state        (what VNDB knows + progress)
              01:23 elapsed    <- timestamps.start
              [View on VNDB]   <- buttons
 
@@ -22,6 +22,7 @@ from typing import Any
 
 from .config import AppConfig
 from .models import GameMetadata, GameProfile, PresenceState, PrivacyMode
+from .playtime import percent
 from .providers.base import PresenceFormatter
 
 MAX_FIELD = 128
@@ -72,14 +73,20 @@ class DefaultFormatter(PresenceFormatter):
             return None
 
         if mode is PrivacyMode.PRIVATE:
+            # Nothing that came from the game or the reader goes out here. A
+            # route name ("Ayamine route") or a progress figure would identify
+            # the novel just as surely as its title, which is the one thing
+            # private mode exists to withhold.
             return {
                 "details": clamp(config.private_title),
-                "state": clamp(state.status_text or config.default_status_text),
+                "state": clamp(config.default_status_text),
                 "start": start,
             }
 
         title = profile.title or (metadata.title if metadata else "Visual Novel")
         status = state.status_text or profile.status_text or config.default_status_text
+
+        progress = percent(state.progress)
 
         if config.use_activity_name:
             # Current Discord clients honour `name`, so the header itself can be
@@ -88,15 +95,17 @@ class DefaultFormatter(PresenceFormatter):
             payload: dict[str, Any] = {
                 "name": clamp(title),
                 "details": clamp(status),
-                "state": clamp(_subtitle(metadata) if metadata else None),
+                "state": clamp(_join(_subtitle(metadata) if metadata else None, progress)),
                 "start": start,
             }
         else:
             # Older clients ignore `name` and print the application's name, so
             # the title has to live in `details` or it would be lost entirely.
+            # There is no third line to put the progress on, so it joins the
+            # status rather than pushing the title off the card.
             payload = {
                 "details": clamp(title),
-                "state": clamp(status),
+                "state": clamp(_join(status, progress)),
                 "start": start,
             }
 
@@ -125,6 +134,12 @@ class DefaultFormatter(PresenceFormatter):
             payload["buttons"] = [{"label": "View on VNDB", "url": metadata.url}]
 
         return {k: v for k, v in payload.items() if v is not None}
+
+
+def _join(*parts: str | None) -> str | None:
+    """Join the pieces of a presence line with the separator used throughout."""
+    kept = [p for p in parts if p]
+    return " • ".join(kept) or None
 
 
 def _subtitle(metadata: GameMetadata | None) -> str | None:

@@ -134,3 +134,38 @@ def test_effective_privacy_resolves_auto():
     assert effective_privacy(profile(), metadata(nsfw=True), CONFIG) is PrivacyMode.PRIVATE
     assert effective_privacy(profile(), metadata(), CONFIG) is PrivacyMode.FULL
     assert effective_privacy(profile(), None, CONFIG) is PrivacyMode.FULL
+
+
+# -- progress and the hand-typed note -------------------------------------
+def test_progress_joins_the_vndb_details_line():
+    payload = build(profile(), metadata(), PresenceState(progress=0.34))
+    assert payload["state"] == "Long (30-50h) • 2009 • 34%"
+
+
+def test_no_progress_leaves_the_line_exactly_as_it_was():
+    assert build(profile(), metadata())["state"] == "Long (30-50h) • 2009"
+
+
+def test_the_note_becomes_the_status_line():
+    payload = build(profile(), metadata(), PresenceState(status_text="Ayamine route"))
+    assert payload["details"] == "Ayamine route"
+    # and the game is still the header, not the route
+    assert payload["name"] == "Steins;Gate"
+
+
+def test_on_an_old_client_progress_joins_the_status_instead():
+    """Without the `name` field there is no third line to put it on."""
+    config = AppConfig(client_id="123", use_activity_name=False)
+    payload = build(profile(), metadata(), PresenceState(progress=0.5), config=config)
+    assert payload["details"] == "Steins;Gate"
+    assert payload["state"] == "Reading • 50%"
+
+
+def test_private_mode_leaks_neither_the_route_nor_the_progress():
+    """A route name identifies the novel as surely as its title does."""
+    state = PresenceState(status_text="Ayamine route", progress=0.9)
+    payload = build(profile(privacy=PrivacyMode.PRIVATE), metadata(), state)
+    assert payload["details"] == CONFIG.private_title
+    assert payload["state"] == CONFIG.default_status_text
+    assert "90%" not in str(payload)
+    assert "Ayamine" not in str(payload)

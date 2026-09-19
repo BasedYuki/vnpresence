@@ -97,14 +97,26 @@ class Box:
         self.value = value
 
 
+class Selection:
+    """Stands in for the Treeview: it is only ever asked what is selected."""
+
+    def __init__(self, *ids):
+        self.ids = ids
+
+    def selection(self):
+        return self.ids
+
+
 @pytest.fixture()
 def app(tmp_path):
-    """An App instance with only the attributes the switches touch."""
+    """An App instance with only the attributes these actions touch."""
     instance = object.__new__(gui.App)
     instance.library = Library(tmp_path / "games")
     instance.library.save(GameProfile(id="x", title="X", path="/x.exe"))
+    instance.tree = Selection("x")
     instance.watch_var = Box(False)
     instance.startup_var = Box(False)
+    instance.note_var = Box("")
     instance.status = Box("")
     return instance
 
@@ -226,3 +238,105 @@ def test_added_games_use_the_configured_default(app, monkeypatch):
     app.add_game()
     added = [p for p in app.library.load_all() if p.title == "Clannad"][0]
     assert added.privacy.value == "auto"
+
+
+# -- the route box and the VNDB link ---------------------------------------
+def test_the_route_box_writes_a_note_the_session_can_read(app):
+    from vnpresence import notes
+
+    app.note_var = Box(" Ayamine route ")
+    app.apply_note()
+    assert notes.read_note("x") == "Ayamine route"
+    assert "Ayamine route" in app.status.get()
+
+
+def test_selecting_a_game_shows_its_existing_note(app):
+    from vnpresence import notes
+
+    notes.write_note("x", "Chapter 3")
+    app.note_var = Box("")
+    app.load_note()
+    assert app.note_var.get() == "Chapter 3"
+
+
+def test_clearing_the_box_removes_the_note(app):
+    from vnpresence import notes
+
+    notes.write_note("x", "Chapter 3")
+    app.note_var = Box("Chapter 3")
+    app.clear_note()
+    assert notes.read_note("x") is None
+
+
+def test_a_pasted_vndb_link_skips_the_name_search(app, monkeypatch):
+    """The whole point: a sequel shares its parent's name, a link does not."""
+    app.config_data = gui.AppConfig(client_id="1")
+    searched, fetched = [], []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def search(self, term, limit=1):
+            searched.append(term)
+            return []
+
+        def get(self, vndb_id):
+            fetched.append(vndb_id)
+            return gui_metadata()
+
+    monkeypatch.setattr(gui, "VNDBClient", FakeClient)
+    metadata, vndb_id = app._lookup("https://vndb.org/v2400")
+    assert fetched == ["v2400"] and searched == []
+    assert vndb_id == "v2400"
+    assert metadata.title == "Rewrite+"
+
+
+def test_a_plain_name_still_goes_through_the_search(app, monkeypatch):
+    app.config_data = gui.AppConfig(client_id="1")
+    searched = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def search(self, term, limit=1):
+            searched.append(term)
+            return [gui_metadata()]
+
+        def get(self, vndb_id):  # pragma: no cover - must not be reached
+            raise AssertionError("a name is not a link")
+
+    monkeypatch.setattr(gui, "VNDBClient", FakeClient)
+    app._lookup("Rewrite")
+    assert searched == ["Rewrite"]
+
+
+def test_relinking_repoints_an_already_added_game(app, monkeypatch):
+    app.config_data = gui.AppConfig(client_id="1")
+    app.refresh = lambda: None
+    app.selected_profile = lambda: app.library.get("x")
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "https://vndb.org/v2400")
+    app._lookup = lambda term: (gui_metadata(), "v2400")
+    app.relink_selected()
+    saved = app.library.get("x")
+    assert saved.vndb_id == "v2400"
+    assert saved.title == "Rewrite+"
+
+
+def test_a_bad_link_changes_nothing(app, monkeypatch):
+    app.config_data = gui.AppConfig(client_id="1")
+    app.refresh = lambda: None
+    app.selected_profile = lambda: app.library.get("x")
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "https://vndb.org/v999999")
+    app._lookup = lambda term: (None, None)
+    app.relink_selected()
+    saved = app.library.get("x")
+    assert saved.vndb_id is None
+    assert saved.title == "X"
+
+
+def gui_metadata():
+    from vnpresence.models import GameMetadata
+
+    return GameMetadata(title="Rewrite+", url="https://vndb.org/v2400", source="vndb")

@@ -90,11 +90,17 @@ plugin_options:
    "nothing new".
 3. **Return `None`, don't guess.** `None` keeps the previous state instead of
    flickering an empty line.
-4. **Respect privacy.** A `StateProvider` runs even in `private` mode, but its
-   text is only shown in the neutral activity's second line. Do not put the game
-   title or anything identifying into it.
+4. **Respect privacy.** A `StateProvider` runs even in `private` mode, but
+   nothing it returns is published there - not the status text, not the
+   progress. A route name identifies a novel as surely as its title does, which
+   is the one thing private mode exists to withhold.
 5. **Text limits.** Discord clips fields at 128 characters; VNPresence clamps for
    you, so long strings are truncated, not rejected.
+6. **`progress` overrules the estimate.** VNPresence works out a rough
+   percentage from reading time against VNDB's average. Set
+   `PresenceState.progress` (0.0-1.0) and yours is used instead - if you can
+   read a save file or count chapters, you know better than the clock does.
+   Leave it `None` to keep the estimate.
 
 ## A metadata provider
 
