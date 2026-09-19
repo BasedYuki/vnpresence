@@ -93,6 +93,12 @@ python tools/make_icon.py
 
 Plain and descriptive: `launcher: follow grandchildren of the launcher process`.
 
+## Getting in touch
+
+GitHub issues are the best place for bugs. For anything else - a game that will
+not track, an idea, a question - you can also reach the maintainer on Discord
+(`reevengeee`) or on [Twitter/X](https://x.com/Yukisobased).
+
 ## Reporting a bug
 
 Include the output of `vnpresence doctor`, the game's profile YAML (minus your

@@ -4,13 +4,11 @@ Discord Rich Presence for visual novels. Launch a VN through VNPresence and your
 Discord profile shows the title, the cover art, how long you have been reading,
 and a link to its VNDB page - the way a normal game does.
 
-```
-Playing Steins;Gate
-┌────────┐  Steins;Gate
-│ cover  │  Reading
-│  art   │  Long (30-50h) • 2009 • ★ 8.9
-└────────┘  01:24:07 elapsed   [ View on VNDB ]
-```
+<p align="center">
+  <img src="assets/screenshot-activity.png" alt="A Discord activity showing Rewrite+ with its cover art, reading time and a View on VNDB button" width="460">
+</p>
+
+<p align="center"><em>What your friends see while you read. No setup: this is what the .exe does out of the box.</em></p>
 
 - Cover art and descriptions come from [VNDB](https://vndb.org) automatically
 - Auto-detect mode picks up games you start from Steam or a shortcut
@@ -32,7 +30,8 @@ Playing Steins;Gate
 7. [Privacy](#7-privacy)
 8. [Plugins](#8-plugins)
 9. [Troubleshooting](#9-troubleshooting)
-10. [Contributing](#10-contributing)
+10. [Contact](#10-contact)
+11. [Contributing](#11-contributing)
 
 ---
 
@@ -153,7 +152,7 @@ Every key it accepts:
 | `description` | from VNDB | Overrides the VNDB description |
 | `process_names` | `[]` | The **real** process name if a launcher starts the game |
 | `launcher_grace` | `12` | Seconds to wait for that real process to appear |
-| `privacy` | `auto` | `auto` / `full` / `private` / `off` - see [Privacy](#7-privacy) |
+| `privacy` | `auto` if the key is missing; games added through VNPresence get `full` | `auto` / `full` / `private` / `off` - see [Privacy](#7-privacy) |
 | `status_text` | `Reading` | The second presence line |
 | `show_buttons` | global | Show the "View on VNDB" button |
 | `client_id` | global | A Discord application just for this game (advanced) |
@@ -233,7 +232,11 @@ Full walkthrough: [`docs/discord-setup.md`](docs/discord-setup.md).
 
 ## 6. What the presence looks like
 
-A normal game, privacy `full`:
+A real session - `Rewrite+`, privacy `full`:
+
+<img src="assets/screenshot-activity.png" alt="Rewrite+ in Discord" width="460">
+
+And what each line is:
 
 ```
 Playing Steins;Gate                        <- name: the game itself
@@ -355,7 +358,17 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | Elapsed time restarts | The tracked process restarted - usually a launcher; set `process_names` |
 | Top line says "a Visual Novel", not the game | That is Discord's behaviour, not a bug - see [section 5](#5-discord-application--client-id) |
 
-## 10. Contributing
+## 10. Contact
+
+Questions, a game that will not track, or an idea - reach me anywhere:
+
+| | |
+|---|---|
+| GitHub issues | <https://github.com/BasedYuki/vnpresence/issues> (best for bugs) |
+| Discord | `reevengeee` |
+| Twitter / X | [@Yukisobased](https://x.com/Yukisobased) |
+
+## 11. Contributing
 
 Contributions are very welcome, especially:
 
