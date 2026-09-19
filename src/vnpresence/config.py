@@ -24,8 +24,13 @@ DEFAULT_CLIENT_ID = "1550587693673488434"
 #: the project's own icon is served straight from the repository - no asset
 #: upload, and no bumping into Discord's 300-asset limit. Set it to "" to turn
 #: the corner icon off, or to an uploaded asset's key to use that instead.
+#:
+#: The ``?v=`` is not decoration. Discord does not load external images itself;
+#: it proxies and caches them per URL, so replacing the file in the repository
+#: leaves everyone looking at the old picture for as long as that cache lives.
+#: Bump the number whenever assets/icon-256.png changes.
 DEFAULT_SMALL_IMAGE = (
-    "https://raw.githubusercontent.com/BasedYuki/vnpresence/main/assets/icon-256.png"
+    "https://raw.githubusercontent.com/BasedYuki/vnpresence/main/assets/icon-256.png?v=2"
 )
 
 
