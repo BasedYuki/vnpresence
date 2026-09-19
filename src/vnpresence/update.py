@@ -200,10 +200,15 @@ def download(url: str, destination: Path, *, session=None, timeout: float = 60.0
         raise UpdateError(
             f"the download is only {written} bytes, which is not a VNPresence build"
         )
+    # Read the header, then close the file *before* deciding. Windows refuses
+    # to delete a file that is still open, so doing this inside the `with`
+    # turned a rejected download into a PermissionError - which is how the
+    # Windows CI caught it.
     with open(destination, "rb") as handle:
-        if handle.read(2) != b"MZ":  # every Windows executable starts with it
-            destination.unlink(missing_ok=True)
-            raise UpdateError("the download is not a Windows executable")
+        header = handle.read(2)
+    if header != b"MZ":  # every Windows executable starts with it
+        destination.unlink(missing_ok=True)
+        raise UpdateError("the download is not a Windows executable")
     return destination
 
 

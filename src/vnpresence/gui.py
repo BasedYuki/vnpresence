@@ -1,18 +1,27 @@
-"""A deliberately small Tkinter window: list, play, add, privacy.
+"""The desktop window: a library, the buttons that act on it, and a theme.
 
 Tkinter ships with Python, so the frozen .exe needs no extra GUI dependency.
-The window is a thin shell over the same API the CLI uses - no logic lives here.
+The window is a thin shell over the same API the CLI uses - no logic lives
+here, which is what keeps it testable without a display: everything that makes
+a decision is a plain function or a method that takes what it needs.
+
+Layout rules the window follows:
+* one accent-coloured button for the main action, everything else quiet;
+* actions that need a selected game sit together and grey out without one;
+* the list carries what you look things up by - name, time read, privacy;
+* nothing is more than one click deep.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import __version__, startup, update
+from . import __version__, startup, theme, update
 from .config import AppConfig
 from .daemon import running_pid, spawn_background, stop_background
 from .launcher import LaunchError
@@ -32,6 +41,30 @@ PRIVACY_HELP = {
     PrivacyMode.PRIVATE: "Private - neutral activity, no title",
     PrivacyMode.OFF: "Off - publish nothing",
 }
+
+
+def matches(profile: GameProfile, query: str) -> bool:
+    """Is this game worth showing while the filter box says `query`?
+
+    Matched against the name and the id, case-insensitively, so typing "muv"
+    finds "Muv-Luv Alternative" and typing "sg" finds the game whose id is
+    steins-gate.
+    """
+    query = " ".join(query.split()).casefold()
+    if not query:
+        return True
+    return query in (profile.title or "").casefold() or query in profile.id.casefold()
+
+
+def row_values(profile: GameProfile, seconds: float = 0.0) -> tuple[str, str, str, str]:
+    """One line of the library list."""
+    read = format_reading_time(seconds) or "-"
+    return (
+        profile.title,
+        read.replace(" read", ""),
+        profile.privacy.value,
+        profile.vndb_id or "-",
+    )
 
 
 def _first_lines(notes: str, limit: int = 8) -> str:
@@ -73,61 +106,112 @@ class App(tk.Tk):
 
     # -- layout -----------------------------------------------------------
     def _build_widgets(self) -> None:
-        frame = ttk.Frame(self, padding=10)
+        self.palette = theme.apply(self, self.config_data.theme)
+
+        frame = ttk.Frame(self, padding=(14, 12))
         frame.pack(fill="both", expand=True)
 
+        # Header: what this is, and the two things that are not about a game.
+        header = ttk.Frame(frame)
+        header.pack(fill="x")
+        ttk.Label(header, text="Your library", style="Heading.TLabel").pack(side="left")
+        ttk.Button(header, text="Updates", command=self.check_for_updates).pack(side="right")
+        self.theme_var = tk.StringVar(value=theme.get(self.config_data.theme).label)
+        theme_box = ttk.Combobox(
+            header, textvariable=self.theme_var, values=theme.labels(),
+            state="readonly", width=18,
+        )
+        theme_box.pack(side="right", padx=8)
+        theme_box.bind("<<ComboboxSelected>>", lambda _e: self.apply_theme())
+        ttk.Label(header, text="Theme", style="Muted.TLabel").pack(side="right")
+
+        # Filter: a library of forty games needs one, and it costs one row.
+        filter_row = ttk.Frame(frame)
+        filter_row.pack(fill="x", pady=(10, 6))
+        self.filter_var = tk.StringVar()
+        self.filter_entry = ttk.Entry(filter_row, textvariable=self.filter_var)
+        self.filter_entry.pack(side="left", fill="x", expand=True)
+        self.filter_var.trace_add("write", lambda *_: self.refresh())
+        ttk.Button(filter_row, text="Clear", command=self.clear_filter).pack(side="left", padx=6)
+
+        # The library itself.
+        list_frame = ttk.Frame(frame)
+        list_frame.pack(fill="both", expand=True)
         self.tree = ttk.Treeview(
-            frame, columns=("title", "privacy", "vndb"), show="headings", height=10
+            list_frame, columns=("title", "read", "privacy", "vndb"),
+            show="headings", height=11, selectmode="browse",
         )
-        for column, heading, width in (
-            ("title", "Game", 300),
-            ("privacy", "Privacy", 90),
-            ("vndb", "VNDB", 80),
+        for column, heading, width, anchor in (
+            ("title", "Game", 280, "w"),
+            ("read", "Time read", 90, "e"),
+            ("privacy", "Privacy", 80, "center"),
+            ("vndb", "VNDB", 70, "center"),
         ):
-            self.tree.heading(column, text=heading)
-            self.tree.column(column, width=width, anchor="w")
-        self.tree.pack(fill="both", expand=True, side="top")
+            self.tree.heading(column, text=heading, command=lambda c=column: self.sort_by(c))
+            self.tree.column(column, width=width, anchor=anchor)
+        scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+
+        # Rows alternate, and the selected game drives the buttons below.
+        self.tree.tag_configure("odd", background=self.palette.stripe)
         self.tree.bind("<Double-1>", lambda _event: self.play_selected())
-        self.tree.bind("<<TreeviewSelect>>", lambda _event: self.load_note())
+        self.tree.bind("<Return>", lambda _event: self.play_selected())
+        self.tree.bind("<Delete>", lambda _event: self.remove_selected())
+        self.tree.bind("<<TreeviewSelect>>", lambda _event: self.on_select())
 
-        buttons = ttk.Frame(frame)
-        buttons.pack(fill="x", pady=(10, 4))
-        ttk.Button(buttons, text="Play", command=self.play_selected).pack(side="left")
-        ttk.Button(buttons, text="Add game…", command=self.add_game).pack(side="left", padx=4)
-        ttk.Button(buttons, text="Remove", command=self.remove_selected).pack(side="left")
-        ttk.Button(buttons, text="VNDB link…", command=self.relink_selected).pack(
-            side="left", padx=4
+        # Primary action, alone, so it is obvious what to press first.
+        actions = ttk.Frame(frame)
+        actions.pack(fill="x", pady=(10, 0))
+        self.play_button = ttk.Button(
+            actions, text="\u25b6  Play", style="Accent.TButton", command=self.play_selected
         )
-        ttk.Button(buttons, text="Time read…", command=self.set_playtime).pack(side="left")
-        ttk.Button(buttons, text="Rename…", command=self.rename_selected).pack(
-            side="left", padx=4
+        self.play_button.pack(side="left")
+        ttk.Button(actions, text="Add game\u2026", command=self.add_game).pack(
+            side="left", padx=(8, 0)
         )
-        ttk.Button(buttons, text="Stop", command=self.stop_session).pack(side="left", padx=4)
-        ttk.Button(buttons, text="Updates", command=self.check_for_updates).pack(side="right")
+        self.stop_button = ttk.Button(actions, text="Stop", command=self.stop_session)
+        self.stop_button.pack(side="right")
 
+        # Everything that needs a game selected, together, greyed out without one.
+        self.needs_selection: list[ttk.Button] = []
+        game_row = ttk.Frame(frame)
+        game_row.pack(fill="x", pady=(8, 0))
+        for text, command in (
+            ("VNDB link\u2026", self.relink_selected),
+            ("Rename\u2026", self.rename_selected),
+            ("Time read\u2026", self.set_playtime),
+            ("Remove", self.remove_selected),
+        ):
+            button = ttk.Button(game_row, text=text, command=command)
+            button.pack(side="left", padx=(0, 6))
+            self.needs_selection.append(button)
+
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=12)
+
+        # Per-game settings, on one line each, with what they mean beside them.
         privacy_row = ttk.Frame(frame)
         privacy_row.pack(fill="x")
         ttk.Label(privacy_row, text="Privacy:").pack(side="left")
         self.privacy_var = tk.StringVar(value=PrivacyMode.AUTO.value)
         combo = ttk.Combobox(
-            privacy_row,
-            textvariable=self.privacy_var,
-            values=[m.value for m in PrivacyMode],
-            state="readonly",
-            width=10,
+            privacy_row, textvariable=self.privacy_var,
+            values=[m.value for m in PrivacyMode], state="readonly", width=10,
         )
         combo.pack(side="left", padx=6)
         combo.bind("<<ComboboxSelected>>", lambda _e: self.apply_privacy())
+        self.needs_selection.append(combo)
 
         # Set it once here instead of fixing every game after adding it.
-        ttk.Label(privacy_row, text="New games:").pack(side="left", padx=(16, 0))
+        ttk.Label(privacy_row, text="New games:", style="Muted.TLabel").pack(
+            side="left", padx=(16, 0)
+        )
         self.default_privacy_var = tk.StringVar(value=self.config_data.default_privacy)
         default_combo = ttk.Combobox(
-            privacy_row,
-            textvariable=self.default_privacy_var,
+            privacy_row, textvariable=self.default_privacy_var,
             values=[m.value for m in PrivacyMode if m is not PrivacyMode.OFF],
-            state="readonly",
-            width=8,
+            state="readonly", width=8,
         )
         default_combo.pack(side="left", padx=6)
         default_combo.bind("<<ComboboxSelected>>", lambda _e: self.apply_default_privacy())
@@ -136,59 +220,128 @@ class App(tk.Tk):
         # Typing here while a game is running changes the activity within one
         # update - there is nothing to restart.
         note_row = ttk.Frame(frame)
-        note_row.pack(fill="x", pady=(10, 0))
+        note_row.pack(fill="x", pady=(8, 0))
         ttk.Label(note_row, text="Route / chapter:").pack(side="left")
         self.note_var = tk.StringVar()
-        entry = ttk.Entry(note_row, textvariable=self.note_var)
-        entry.pack(side="left", fill="x", expand=True, padx=6)
-        entry.bind("<Return>", lambda _e: self.apply_note())
+        note_entry = ttk.Entry(note_row, textvariable=self.note_var)
+        note_entry.pack(side="left", fill="x", expand=True, padx=6)
+        note_entry.bind("<Return>", lambda _e: self.apply_note())
         ttk.Button(note_row, text="Set", command=self.apply_note).pack(side="left")
         ttk.Button(note_row, text="Clear", command=self.clear_note).pack(side="left", padx=4)
 
         # The two switches that make the app hands-off: no terminal needed.
         switches = ttk.Frame(frame)
-        switches.pack(fill="x", pady=(10, 0))
+        switches.pack(fill="x", pady=(12, 0))
 
         self.watch_var = tk.BooleanVar(value=running_pid() is not None)
         ttk.Checkbutton(
-            switches,
-            text="Auto-detect games I start myself",
-            variable=self.watch_var,
-            command=self.toggle_watch,
+            switches, text="Auto-detect games I start myself",
+            variable=self.watch_var, command=self.toggle_watch,
         ).pack(anchor="w")
 
         self.startup_var = tk.BooleanVar(value=self._startup_state())
         self.startup_box = ttk.Checkbutton(
-            switches,
-            text="Start with Windows",
-            variable=self.startup_var,
-            command=self.toggle_startup,
+            switches, text="Start with Windows",
+            variable=self.startup_var, command=self.toggle_startup,
         )
         self.startup_box.pack(anchor="w")
         if sys.platform != "win32":
             self.startup_box.state(["disabled"])
 
-        self.status = tk.StringVar(value="Ready")
-        ttk.Label(frame, textvariable=self.status, foreground="#555").pack(
-            fill="x", pady=(8, 0)
+        self.status = tk.StringVar(value=f"VNPresence {__version__} - pick a game and press Play")
+        ttk.Label(frame, textvariable=self.status, style="Muted.TLabel").pack(
+            fill="x", pady=(12, 0)
         )
 
+        self.bind("<Control-f>", lambda _e: self.filter_entry.focus_set())
+        self.bind("<F5>", lambda _e: self.refresh())
+        self.on_select()
+
     # -- data -------------------------------------------------------------
+    def visible_profiles(self) -> list[GameProfile]:
+        """The library, filtered by the box and in the chosen order."""
+        query = self.filter_var.get() if hasattr(self, "filter_var") else ""
+        profiles = [p for p in self.library.load_all() if matches(p, query)]
+        history = Playtime().load()
+
+        def key(profile: GameProfile):
+            column = self.sort_column
+            if column == "read":
+                entry = history.get(profile.id)
+                return -(entry.seconds if entry else 0.0)
+            if column == "privacy":
+                return profile.privacy.value
+            if column == "vndb":
+                return profile.vndb_id or "zzz"  # unmatched games last
+            return (profile.title or "").casefold()
+
+        return sorted(profiles, key=key, reverse=self.sort_reverse)
+
     def refresh(self) -> None:
+        selected = self.tree.selection()
         self.tree.delete(*self.tree.get_children())
-        for profile in self.library.load_all():
+        history = Playtime().load()
+        shown = self.visible_profiles()
+        for index, profile in enumerate(shown):
+            entry = history.get(profile.id)
             self.tree.insert(
                 "",
                 "end",
                 iid=profile.id,
-                values=(profile.title, profile.privacy.value, profile.vndb_id or "-"),
+                values=row_values(profile, entry.seconds if entry else 0.0),
+                tags=("odd",) if index % 2 else (),
             )
+        # Keep the selection across a refresh, or the buttons flicker off.
+        if selected and selected[0] in {p.id for p in shown}:
+            self.tree.selection_set(selected[0])
+        self.on_select()
+
+    #: The list starts alphabetical, which is what a library of names wants.
+    sort_column = "title"
+    sort_reverse = False
+
+    def sort_by(self, column: str) -> None:
+        """Clicking a heading sorts by it; clicking the same one reverses."""
+        self.sort_reverse = (not self.sort_reverse) if column == self.sort_column else False
+        self.sort_column = column
+        self.refresh()
+
+    def clear_filter(self) -> None:
+        self.filter_var.set("")
+        self.filter_entry.focus_set()
+
+    def on_select(self) -> None:
+        """Keep the buttons honest: no game selected, nothing to press."""
+        profile = self.selected_profile()
+        state = "!disabled" if profile is not None else "disabled"
+        for widget in getattr(self, "needs_selection", []):
+            # A stubbed widget in the tests has no state(); nothing to do.
+            with contextlib.suppress(Exception):
+                widget.state([state])
+        if profile is None:
+            self.load_note()
+            return
+        self.privacy_var.set(profile.privacy.value)
+        self.load_note()
+        self.status.set(PRIVACY_HELP[profile.privacy])
 
     def selected_profile(self) -> GameProfile | None:
         selection = self.tree.selection()
         if not selection:
             return None
         return self.library.get(selection[0])
+
+    def apply_theme(self) -> None:
+        """Repaint the window and remember the choice."""
+        palette = theme.by_label(self.theme_var.get())
+        self.palette = theme.apply(self, palette.name)
+        self.tree.tag_configure("odd", background=self.palette.stripe)
+        self.config_data.theme = palette.name
+        try:
+            self.config_data.save()
+        except Exception as exc:  # pragma: no cover - disk trouble
+            log.debug("could not save the theme: %s", exc)
+        self.status.set(f"Theme: {palette.label}")
 
     # -- actions ----------------------------------------------------------
     def add_game(self) -> None:

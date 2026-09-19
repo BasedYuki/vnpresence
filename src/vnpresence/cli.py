@@ -17,6 +17,8 @@ from .notes import clear_note, read_note, write_note
 from .playtime import Playtime, parse_duration
 from .plugins import build_registry
 from .session import GameSession, format_duration
+from .theme import PALETTES
+from .theme import get as get_theme
 from .titles import guess_title
 from .update import UpdateError, check, install, skip_version
 from .vndb import VNDBClient, VNDBError
@@ -469,6 +471,27 @@ def plugins_command() -> None:
     info = build_registry(AppConfig.load().enabled_plugins or None).describe()
     for key, values in info.items():
         click.echo(f"{key}: {', '.join(values) or '-'}")
+
+
+@main.command("theme")
+@click.argument("name", required=False)
+def theme_command(name: str | None) -> None:
+    """Show the window's colour themes, or switch to one."""
+    config = AppConfig.load()
+    if not name:
+        for palette in PALETTES.values():
+            mark = "*" if palette.name == get_theme(config.theme).name else " "
+            click.echo(f" {mark} {palette.name.ljust(16)} {palette.label}")
+        click.echo("\nSwitch with:  vnpresence theme kingdom-hearts")
+        return
+    palette = get_theme(name)
+    if palette.name != name.strip().lower():
+        raise click.ClickException(
+            f"no theme called {name!r} - try: {', '.join(PALETTES)}"
+        )
+    config.theme = palette.name
+    config.save()
+    click.secho(f"\u2713 theme: {palette.label}", fg="green")
 
 
 @main.command("update")

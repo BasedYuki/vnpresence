@@ -527,3 +527,107 @@ def test_a_crashing_check_never_takes_the_window_down(app, monkeypatch):
     monkeypatch.setattr(gui.update, "check", lambda **k: 1 / 0)
     app.after = lambda delay, fn=None: pytest.fail("nothing should be scheduled")
     app._check_updates_quietly()  # must simply return
+
+
+# -- the library list: filtering, sorting, selection ------------------------
+def _profile(game_id, title, **kwargs):
+    return GameProfile(id=game_id, title=title, path=f"/{game_id}.exe", **kwargs)
+
+
+def test_the_filter_matches_name_and_id():
+    muv = _profile("muv-luv", "Muv-Luv Alternative")
+    assert gui.matches(muv, "")          # an empty box shows everything
+    assert gui.matches(muv, "muv")
+    assert gui.matches(muv, "ALTERNATIVE")   # case does not matter
+    assert gui.matches(muv, "  muv  ")       # nor does stray whitespace
+    assert gui.matches(_profile("steins-gate", "STEINS;GATE"), "steins")
+    assert not gui.matches(muv, "clannad")
+
+
+def test_a_row_shows_what_you_look_a_game_up_by():
+    profile = _profile("sg", "STEINS;GATE", vndb_id="v2002")
+    title, read, privacy, vndb = gui.row_values(profile, 12 * 3600 + 40 * 60)
+    assert title == "STEINS;GATE"
+    assert read == "12h 40m"     # the column header already says "Time read"
+    assert vndb == "v2002"
+    assert privacy == "auto"
+
+
+def test_a_game_never_read_shows_a_dash_not_a_zero():
+    assert gui.row_values(_profile("x", "X"), 0.0)[1] == "-"
+
+
+def test_a_game_with_no_vndb_match_is_visible_as_such():
+    assert gui.row_values(_profile("x", "X"), 0.0)[3] == "-"
+
+
+def test_filtering_narrows_the_list(app):
+    app.library.save(_profile("muv-luv", "Muv-Luv Alternative"))
+    app.library.save(_profile("clannad", "Clannad"))
+    app.filter_var = Box("muv")
+    assert [p.id for p in app.visible_profiles()] == ["muv-luv"]
+
+
+def test_the_list_is_alphabetical_by_default(app):
+    app.library.save(_profile("z", "Zero Escape"))
+    app.library.save(_profile("a", "Air"))
+    app.filter_var = Box("")
+    assert [p.title for p in app.visible_profiles()][:2] == ["Air", "X"]
+
+
+def test_clicking_a_heading_sorts_and_clicking_again_reverses(app):
+    app.library.save(_profile("a", "Air"))
+    app.filter_var = Box("")
+    app.refresh = lambda: None
+    assert (app.sort_column, app.sort_reverse) == ("title", False)  # where it starts
+    app.sort_by("title")            # the column it is already sorted by
+    assert app.sort_reverse is True  # ... so it reverses
+    app.sort_by("read")             # a different column
+    assert (app.sort_column, app.sort_reverse) == ("read", False)  # ... starts ascending
+    app.sort_by("read")
+    assert app.sort_reverse is True
+
+
+def test_sorting_by_time_read_puts_the_most_read_first(app):
+    from vnpresence.playtime import Playtime
+
+    app.library.save(_profile("a", "Air"))
+    Playtime().set("a", 40 * 3600)
+    Playtime().set("x", 2 * 3600)
+    app.filter_var = Box("")
+    app.sort_column, app.sort_reverse = "read", False
+    assert [p.id for p in app.visible_profiles()] == ["a", "x"]
+
+
+def test_games_without_a_vndb_match_sort_to_the_bottom(app):
+    app.library.save(_profile("a", "Air", vndb_id="v1"))
+    app.filter_var = Box("")
+    app.sort_column, app.sort_reverse = "vndb", False
+    assert [p.id for p in app.visible_profiles()] == ["a", "x"]  # x has none
+
+
+def test_clearing_the_filter_empties_the_box(app):
+    app.filter_var = Box("muv")
+    app.filter_entry = type("E", (), {"focus_set": lambda self: None})()
+    app.refresh = lambda: None
+    app.clear_filter()
+    assert app.filter_var.get() == ""
+
+
+# -- theme -----------------------------------------------------------------
+def test_choosing_a_theme_saves_it(app, monkeypatch):
+    from vnpresence import theme
+
+    app.config_data = gui.AppConfig(client_id="1")
+    app.theme_var = Box("Kingdom Hearts")
+    app.tree = type("T", (), {"tag_configure": lambda self, *a, **k: None,
+                              "selection": lambda self: ()})()
+    monkeypatch.setattr(theme, "apply", lambda root, name: theme.get(name))
+    app.apply_theme()
+    assert app.config_data.theme == "kingdom-hearts"
+    assert gui.AppConfig.load().theme == "kingdom-hearts"
+    assert "Kingdom Hearts" in app.status.get()
+
+
+def test_the_default_theme_is_the_dark_one():
+    assert gui.AppConfig().theme == "midnight"

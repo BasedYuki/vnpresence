@@ -17,6 +17,8 @@ and a link to its VNDB page - the way a normal game does.
 - Your total reading time, counted across every session, on the card itself
 - Per-game privacy, with a one-switch option to hide 18+ titles
 - A plugin API for anything the defaults do not cover
+- Three themes, including a deep-blue-and-gold one for the Kingdom Hearts fans
+- Updates itself: it tells you when a new build is out and installs it
 - MIT licensed, no telemetry, nothing phoning home except VNDB
 
 **Get in touch** — Discord `reevengeee` · [@Yukisobased](https://x.com/Yukisobased) ·
@@ -100,6 +102,7 @@ vnpresence link rewrite https://vndb.org/v7738   # fix a wrong VNDB match
 vnpresence rematch --all                    # retry games that have no cover
 vnpresence rename sg "STEINS;GATE Re:Boot"  # what the presence calls it
 vnpresence search "muv luv"                 # look up VNDB ids
+vnpresence theme kingdom-hearts             # change the window's colours
 vnpresence update                           # is there a newer build? install it
 vnpresence doctor                           # check Discord, VNDB, config, paths
 vnpresence plugins                          # list active plugins
@@ -144,6 +147,50 @@ without a yes, and the check itself only reads a single public GitHub URL.
 Installed from source or from PyPI? The check still works, and tells you to use
 `git pull` or `pip install -U vnpresence` instead of replacing an `.exe` that
 is not there.
+
+### The window
+
+```
+┌─ Your library ──────────────────── Theme [Midnight ▾] [Updates] ─┐
+│ [ filter…                                            ]  [Clear]  │
+│ ┌──────────────────────────────────────────────────────────────┐ │
+│ │ Game                    Time read   Privacy   VNDB           │ │
+│ │ STEINS;GATE               12h 40m      full   v2002          │ │
+│ │ Muv-Luv Alternative           58h      full   v92            │ │  ← selected
+│ │ Tsukihime                 31h 05m      auto   v7             │ │
+│ └──────────────────────────────────────────────────────────────┘ │
+│ [ ▶ Play ]  [Add game…]                               [Stop]     │
+│ [VNDB link…] [Rename…] [Time read…] [Remove]                     │
+│ Route / chapter: [ Ayamine route          ] [Set] [Clear]        │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- **One primary button.** Play is the only coloured one; everything else is quiet.
+- **Actions that need a game grey out** until one is selected, so nothing you can
+  press does nothing.
+- **Type to filter** - by name or by id. `Ctrl+F` jumps to the box, `F5` refreshes.
+- **Click a heading to sort**, click it again to reverse. Sort by *Time read* to
+  see what you actually read.
+- **Enter** plays the selected game, **Delete** removes it, **double-click** plays.
+
+#### Themes
+
+| | |
+|---|---|
+| **Midnight** | The default. Near-black with the app's own purple. |
+| **Daylight** | The same window in daylight. |
+| **Kingdom Hearts** | Deep ocean blue and gold. An original palette of eight colours inspired by those games - no artwork, logos or characters of theirs are used. |
+
+Pick one from the **Theme** box in the window, or:
+
+```bash
+vnpresence theme                 # what there is, and which one is on
+vnpresence theme kingdom-hearts
+```
+
+Every palette is checked against the WCAG contrast thresholds by the test
+suite, so "readable" is not a matter of opinion - a theme that fails cannot be
+merged.
 
 ### Where your data lives
 

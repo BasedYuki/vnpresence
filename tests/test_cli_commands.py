@@ -240,3 +240,27 @@ def test_update_can_be_turned_off(library, monkeypatch):
         "vnpresence.cli.check", lambda force=False: pytest.fail("checks are off")
     )
     assert "turned off" in run("update").output
+
+
+# -- theme -----------------------------------------------------------------
+def test_theme_lists_what_there_is_and_marks_the_current_one(library):
+    output = run("theme").output
+    assert "kingdom-hearts" in output
+    assert "* midnight" in output  # the default, marked
+
+
+def test_theme_switches_and_remembers(library):
+    from vnpresence.config import AppConfig
+
+    assert run("theme", "kingdom-hearts").exit_code == 0
+    assert AppConfig.load().theme == "kingdom-hearts"
+    assert "* kingdom-hearts" in run("theme").output
+
+
+def test_an_unknown_theme_is_refused_rather_than_silently_ignored(library):
+    from vnpresence.config import AppConfig
+
+    result = run("theme", "neon-pink")
+    assert result.exit_code != 0
+    assert "no theme called" in result.output
+    assert AppConfig.load().theme == "midnight"
