@@ -5,7 +5,7 @@ Discord profile shows the title, the cover art, how long you have been reading,
 and a link to its VNDB page - the way a normal game does.
 
 <p align="center">
-  <img src="assets/screenshot-activity.png" alt="A Discord activity showing Rewrite+ with its cover art, reading time and a View on VNDB button" width="460">
+  <img src="assets/screenshot-activity.png" alt="A Discord activity showing Rewrite+ with its cover art, the VNPresence icon in the corner, reading time and a View on VNDB button" width="460">
 </p>
 
 <p align="center"><em>What your friends see while you read. No setup: this is what the .exe does out of the box.</em></p>
@@ -246,9 +246,12 @@ Playing Steins;Gate                        <- name: the game itself
 ┌────────┐  Steins;Gate                    <- the activity card
 │ VNDB   │  Reading                        <- details: status or plugin state
 │ cover  │  Long (30-50h) • 2009 • ★ 8.9   <- state: what VNDB knows
-└────────┘  01:24:07 elapsed
+└─────(◍)┘  01:24:07 elapsed
             [ View on VNDB ]
 ```
+
+The small badge on the corner of the cover is VNPresence's own icon; hovering it
+names the app, while the cover itself names the game.
 
 An 18+ title, privacy `auto` - no name, no art, nothing identifying:
 
