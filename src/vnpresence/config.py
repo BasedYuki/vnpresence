@@ -81,6 +81,9 @@ class AppConfig:
     show_buttons: bool = True
     #: Small image (icon) shown in the corner of the cover art.
     small_image: str = DEFAULT_SMALL_IMAGE
+    #: Tooltip on that small icon. The game's name is already the header and
+    #: the cover's tooltip, so this names the app instead of repeating it.
+    small_text: str = "VNPresence"
     #: Seconds between presence updates. Discord rate-limits to 1 per 15s.
     update_interval: float = 15.0
     #: Seconds between process checks while a game is running.

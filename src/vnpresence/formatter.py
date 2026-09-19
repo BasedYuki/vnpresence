@@ -2,11 +2,15 @@
 
 Discord's layout, and what we put where::
 
-    Playing Visual Novel      <- the Discord application's name (not settable)
-    [cover]  Steins;Gate      <- details      (the game title)
-             Reading          <- state        (status text / plugin state)
+    Playing Steins;Gate       <- name         (the game; see use_activity_name)
+    [cover]  Steins;Gate      <- the card's own title line
+             Reading          <- details      (status text / plugin state)
+             Long • 2009      <- state        (what VNDB knows)
              01:23 elapsed    <- timestamps.start
              [View on VNDB]   <- buttons
+
+The cover's tooltip is the game; the corner icon's tooltip names the app, so
+the two do not say the same thing twice.
 
 Field limits enforced here: details/state must be 2-128 characters, and Discord
 silently drops an activity whose strings are out of range.
@@ -106,9 +110,12 @@ class DefaultFormatter(PresenceFormatter):
         small_image = state.small_image or config.small_image
         if small_image and large_image:
             payload["small_image"] = small_image
-            # With the name layout the subtitle is already on the state line,
-            # so the little icon shows the title instead of repeating it.
-            fallback = title if config.use_activity_name else _subtitle(metadata)
+            # The game is already the header and the cover's tooltip, so the
+            # corner icon names the app - unless a plugin or the config says
+            # otherwise, or there is nothing to show but the VNDB details.
+            fallback = config.small_text or (
+                title if config.use_activity_name else _subtitle(metadata)
+            )
             payload["small_text"] = clamp(state.small_text or fallback)
 
         show_buttons = (

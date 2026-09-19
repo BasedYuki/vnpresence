@@ -96,6 +96,22 @@ def test_profile_image_override_wins():
     assert payload["large_image"] == "https://example.com/custom.png"
 
 
+def test_the_corner_icon_names_the_app_not_the_game():
+    payload = build(profile(), metadata())
+    assert payload["small_text"] == "VNPresence"
+
+
+def test_the_corner_tooltip_can_be_changed():
+    config = AppConfig(client_id="1", small_image="https://x/i.png", small_text="Yuki's VN tracker")
+    payload = build(profile(), metadata(), config=config)
+    assert payload["small_text"] == "Yuki's VN tracker"
+
+
+def test_a_plugin_still_wins_over_the_configured_tooltip():
+    payload = build(profile(), metadata(), PresenceState(small_text="Route: Kotori"))
+    assert payload["small_text"] == "Route: Kotori"
+
+
 def test_buttons_can_be_disabled_per_game():
     payload = build(profile(show_buttons=False), metadata())
     assert "buttons" not in payload
