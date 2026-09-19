@@ -454,3 +454,76 @@ def test_a_nonsense_time_changes_nothing(app, monkeypatch):
     app.selected_profile = lambda: app.library.get("x")
     app.set_playtime()
     assert Playtime().total("x") == 3600
+
+
+# -- updates ---------------------------------------------------------------
+def _release(**kwargs):
+    from vnpresence.update import Release
+
+    base = {"version": "9.9.9", "notes": "a fix", "published": "2026-09-19"}
+    base.update(kwargs)
+    return Release(**base)
+
+
+def test_the_window_offers_the_update_it_found(app, monkeypatch):
+    shown = []
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda t, m: shown.append(m) or False)
+    monkeypatch.setattr(gui.messagebox, "showinfo", lambda *a, **k: None)
+    app._install_update = lambda release: pytest.fail("not without a yes")
+    app._offer_update(_release())
+    assert "9.9.9" in shown[0]
+    assert gui.__version__ in shown[0]  # and what they have now
+
+
+def test_saying_yes_installs(app, monkeypatch):
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda t, m: True)
+    installed = []
+    app._install_update = installed.append
+    app._offer_update(_release())
+    assert installed and installed[0].version == "9.9.9"
+
+
+def test_saying_no_twice_skips_the_version(app, monkeypatch):
+    from vnpresence import update
+
+    answers = iter([False, True])  # no do not install, yes stop mentioning it
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda t, m: next(answers))
+    app._offer_update(_release())
+    assert update.is_skipped("9.9.9")
+
+
+def test_saying_no_once_keeps_the_reminder(app, monkeypatch):
+    from vnpresence import update
+
+    answers = iter([False, False])
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda t, m: next(answers))
+    app._offer_update(_release())
+    assert not update.is_skipped("9.9.9")
+
+
+def test_being_up_to_date_is_silent_on_the_automatic_check(app, monkeypatch):
+    monkeypatch.setattr(
+        gui.messagebox, "showinfo", lambda *a, **k: pytest.fail("nothing to say")
+    )
+    app._offer_update(None)
+    assert gui.__version__ in app.status.get()
+
+
+def test_the_updates_button_says_so_either_way(app, monkeypatch):
+    told = []
+    monkeypatch.setattr(gui.messagebox, "showinfo", lambda title, text: told.append(text))
+    app._offer_update(None, quiet=False)
+    assert told and "newest build" in told[0]
+
+
+def test_a_failed_update_points_at_the_releases_page(app, monkeypatch):
+    told = []
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda title, text: told.append(text))
+    app._update_failed(_release(url="https://github.com/BasedYuki/vnpresence/releases"), "no")
+    assert "releases" in told[0]
+
+
+def test_a_crashing_check_never_takes_the_window_down(app, monkeypatch):
+    monkeypatch.setattr(gui.update, "check", lambda **k: 1 / 0)
+    app.after = lambda delay, fn=None: pytest.fail("nothing should be scheduled")
+    app._check_updates_quietly()  # must simply return

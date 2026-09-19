@@ -100,6 +100,9 @@ class AppConfig:
     watch_interval: float = 5.0
     #: Treat 18+ titles as private when a game's privacy is "auto".
     nsfw_auto_private: bool = True
+    #: Ask GitHub once a day whether a newer VNPresence has been released.
+    #: The check is read-only and nothing is ever downloaded without a yes.
+    check_updates: bool = True
     #: How long VNDB responses stay cached, in days.
     cache_days: int = 30
     #: Enabled plugin names; empty means "all installed plugins".

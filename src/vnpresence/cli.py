@@ -18,6 +18,7 @@ from .playtime import Playtime, parse_duration
 from .plugins import build_registry
 from .session import GameSession, format_duration
 from .titles import guess_title
+from .update import UpdateError, check, install, skip_version
 from .vndb import VNDBClient, VNDBError
 
 
@@ -468,6 +469,38 @@ def plugins_command() -> None:
     info = build_registry(AppConfig.load().enabled_plugins or None).describe()
     for key, values in info.items():
         click.echo(f"{key}: {', '.join(values) or '-'}")
+
+
+@main.command("update")
+@click.option("--check", "check_only", is_flag=True, help="Only say whether one exists.")
+@click.option("--yes", "assume_yes", is_flag=True, help="Install without asking.")
+def update_command(check_only: bool, assume_yes: bool) -> None:
+    """See whether a newer VNPresence has been released, and install it."""
+    if not AppConfig.load().check_updates:
+        click.secho("Update checks are turned off (check_updates: false).", fg="yellow")
+        return
+    release = check(force=True)
+    if release is None:
+        click.secho(f"\u2713 VNPresence {__version__} is the newest build.", fg="green")
+        return
+
+    click.secho(f"VNPresence {release.version} is out (you have {__version__}).", fg="cyan")
+    if release.published:
+        click.echo(f"  released {release.published}")
+    if release.notes:
+        click.echo("\n" + "\n".join(f"  {line}" for line in release.notes.splitlines()[:12]))
+    click.echo(f"\n  {release.url}")
+    if check_only:
+        return
+    if not (assume_yes or click.confirm("\nDownload and install it?", default=True)):
+        if click.confirm("Stop mentioning this version?", default=False):
+            skip_version(release.version)
+        return
+    try:
+        click.echo("Downloading...")
+        click.secho("\u2713 " + install(release), fg="green")
+    except UpdateError as exc:
+        raise click.ClickException(f"{exc}\n\nDownload it yourself from {release.url}") from exc
 
 
 @main.command("doctor")

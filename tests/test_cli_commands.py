@@ -183,3 +183,60 @@ def test_rematch_that_finds_nothing_changes_nothing(library, monkeypatch):
     monkeypatch.setattr("vnpresence.cli._search_interactive", lambda term, cfg: (None, None))
     run("rematch", "--all")
     assert Library().get("clannad").vndb_id is None
+
+
+# -- update ----------------------------------------------------------------
+def test_update_check_says_when_you_are_current(library, monkeypatch):
+    monkeypatch.setattr("vnpresence.cli.check", lambda force=False: None)
+    output = run("update", "--check").output
+    assert "newest build" in output
+
+
+def test_update_check_reports_a_new_version_without_downloading(library, monkeypatch):
+    from vnpresence.update import Release
+
+    monkeypatch.setattr(
+        "vnpresence.cli.check",
+        lambda force=False: Release(version="9.9.9", notes="a fix", published="2026-09-19"),
+    )
+    monkeypatch.setattr(
+        "vnpresence.cli.install", lambda r: pytest.fail("--check must not install")
+    )
+    output = run("update", "--check").output
+    assert "9.9.9" in output
+    assert "a fix" in output
+
+
+def test_update_installs_when_told_to(library, monkeypatch):
+    from vnpresence.update import Release
+
+    monkeypatch.setattr("vnpresence.cli.check", lambda force=False: Release(version="9.9.9"))
+    monkeypatch.setattr("vnpresence.cli.install", lambda r: "downloaded 9.9.9")
+    output = run("update", "--yes").output
+    assert "downloaded 9.9.9" in output
+
+
+def test_update_points_at_the_page_when_it_cannot_install(library, monkeypatch):
+    from vnpresence.update import Release, UpdateError
+
+    def refuse(release):
+        raise UpdateError("this copy runs from source")
+
+    monkeypatch.setattr(
+        "vnpresence.cli.check", lambda force=False: Release(version="9.9.9")
+    )
+    monkeypatch.setattr("vnpresence.cli.install", refuse)
+    result = run("update", "--yes")
+    assert result.exit_code != 0
+    assert "runs from source" in result.output
+    assert "releases" in result.output
+
+
+def test_update_can_be_turned_off(library, monkeypatch):
+    from vnpresence.config import AppConfig
+
+    AppConfig(check_updates=False).save()
+    monkeypatch.setattr(
+        "vnpresence.cli.check", lambda force=False: pytest.fail("checks are off")
+    )
+    assert "turned off" in run("update").output

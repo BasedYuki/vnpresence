@@ -100,6 +100,7 @@ vnpresence link rewrite https://vndb.org/v7738   # fix a wrong VNDB match
 vnpresence rematch --all                    # retry games that have no cover
 vnpresence rename sg "STEINS;GATE Re:Boot"  # what the presence calls it
 vnpresence search "muv luv"                 # look up VNDB ids
+vnpresence update                           # is there a newer build? install it
 vnpresence doctor                           # check Discord, VNDB, config, paths
 vnpresence plugins                          # list active plugins
 vnpresence gui                              # open the window
@@ -108,6 +109,41 @@ vnpresence gui                              # open the window
 VNPresence stays in the foreground while you read, updates the presence every 15
 seconds, and clears it the moment the game closes. Press `Ctrl+C` (or **Stop** in
 the window) to end the session early.
+
+### Staying up to date
+
+VNPresence asks GitHub once a day whether a newer build has been released, and
+offers it:
+
+```
+A new version of VNPresence is available.
+
+You have: 0.11.0
+Latest:   0.12.0  (2026-09-19)
+
+Download and install it now?
+```
+
+Say yes and it downloads the new `.exe`, then installs it when you close the
+window and starts itself again. Windows will not let a running program
+overwrite itself, so the new build is downloaded beside the old one and swapped
+in afterwards - **the old build is kept as `VNPresence.exe.old`**, so a bad
+update is one rename away from being undone.
+
+From the command line:
+
+```bash
+vnpresence update --check     # just say whether there is one
+vnpresence update             # ask, then install
+```
+
+Say no twice and that version is never mentioned again. Turn the whole thing
+off with `check_updates: false` in `config.yaml`; nothing is ever downloaded
+without a yes, and the check itself only reads a single public GitHub URL.
+
+Installed from source or from PyPI? The check still works, and tells you to use
+`git pull` or `pip install -U vnpresence` instead of replacing an `.exe` that
+is not there.
 
 ### Where your data lives
 
@@ -118,6 +154,7 @@ the window) to end the session early.
 | VNDB cache | `%APPDATA%\VNPresence\cache\` | `~/.cache/vnpresence/` |
 | Reading time | `%APPDATA%\VNPresence\playtime.yaml` | `~/.config/vnpresence/playtime.yaml` |
 | Route notes | `%APPDATA%\VNPresence\notes\` | `~/.config/vnpresence/notes/` |
+| Update state | `%APPDATA%\VNPresence\updates.json` | `~/.config/vnpresence/updates.json` |
 
 Set `VNPRESENCE_HOME` to keep everything in one portable folder next to the `.exe`.
 

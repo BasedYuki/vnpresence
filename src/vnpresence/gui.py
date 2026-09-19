@@ -12,7 +12,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import startup
+from . import __version__, startup, update
 from .config import AppConfig
 from .daemon import running_pid, spawn_background, stop_background
 from .launcher import LaunchError
@@ -32,6 +32,14 @@ PRIVACY_HELP = {
     PrivacyMode.PRIVATE: "Private - neutral activity, no title",
     PrivacyMode.OFF: "Off - publish nothing",
 }
+
+
+def _first_lines(notes: str, limit: int = 8) -> str:
+    """A few lines of the release notes, for a message box that stays a box."""
+    if not notes:
+        return ""
+    lines = [line for line in notes.splitlines() if line.strip()][:limit]
+    return "\n".join(lines) + "\n"
 
 
 def _vndb_id_of(metadata) -> str | None:
@@ -56,6 +64,12 @@ class App(tk.Tk):
         self._build_widgets()
         self.refresh()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        # Off the main thread and a moment late: a slow GitHub must never keep
+        # the window from appearing.
+        if self.config_data.check_updates:
+            self.after(2000, lambda: threading.Thread(
+                target=self._check_updates_quietly, daemon=True
+            ).start())
 
     # -- layout -----------------------------------------------------------
     def _build_widgets(self) -> None:
@@ -89,6 +103,7 @@ class App(tk.Tk):
             side="left", padx=4
         )
         ttk.Button(buttons, text="Stop", command=self.stop_session).pack(side="left", padx=4)
+        ttk.Button(buttons, text="Updates", command=self.check_for_updates).pack(side="right")
 
         privacy_row = ttk.Frame(frame)
         privacy_row.pack(fill="x")
@@ -448,6 +463,89 @@ class App(tk.Tk):
         self.status.set(PRIVACY_HELP[profile.privacy])
 
     # -- the two switches -------------------------------------------------
+    # -- updates ----------------------------------------------------------
+    def _check_updates_quietly(self) -> None:
+        """The once-a-day check. Silent unless there is something to say."""
+        try:
+            release = update.check()
+        except Exception:  # pragma: no cover - a check must never crash the app
+            log.debug("update check failed", exc_info=True)
+            return
+        if release is not None:
+            self.after(0, lambda: self._offer_update(release))
+
+    def check_for_updates(self) -> None:
+        """The Updates button: says so either way, and ignores "skip"."""
+        self.status.set("Checking for updates\u2026")
+
+        def work() -> None:
+            release = update.check(force=True)
+            self.after(0, lambda: self._offer_update(release, quiet=False))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _offer_update(self, release, *, quiet: bool = True) -> None:
+        if release is None:
+            self.status.set(f"VNPresence {__version__} is the newest build.")
+            if not quiet:
+                messagebox.showinfo(
+                    "VNPresence", f"You are on the newest build ({__version__})."
+                )
+            return
+
+        self.status.set(f"VNPresence {release.version} is available.")
+        message = (
+            f"A new version of VNPresence is available.\n\n"
+            f"You have: {__version__}\n"
+            f"Latest:   {release.version}"
+            + (f"  ({release.published})" if release.published else "")
+            + "\n\n"
+            + _first_lines(release.notes)
+            + "\nDownload and install it now?"
+        )
+        if messagebox.askyesno("Update available", message):
+            self._install_update(release)
+            return
+        if messagebox.askyesno(
+            "Update available", f"Stop mentioning {release.version}?"
+        ):
+            update.skip_version(release.version)
+            self.status.set(f"Will not mention {release.version} again.")
+
+    def _install_update(self, release) -> None:
+        self.status.set("Downloading the update\u2026")
+
+        def work() -> None:
+            try:
+                message = update.install(release)
+            except update.UpdateError as exc:
+                # Bound here, not inside the lambda: by the time tkinter runs
+                # it the except block is long gone and `exc` with it.
+                reason = str(exc)
+                self.after(0, lambda: self._update_failed(release, reason))
+                return
+            except Exception as exc:  # pragma: no cover - network, disk
+                log.exception("update failed")
+                reason = str(exc)
+                self.after(0, lambda: self._update_failed(release, reason))
+                return
+            self.after(0, lambda: self._update_ready(message))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _update_ready(self, message: str) -> None:
+        self.status.set(message)
+        if messagebox.askyesno("Update ready", message + "\n\nClose VNPresence now?"):
+            self._on_close()
+
+    def _update_failed(self, release, reason: str) -> None:
+        self.status.set("The update could not be installed.")
+        messagebox.showerror(
+            "VNPresence",
+            f"The update could not be installed:\n\n{reason}\n\n"
+            f"You can download it yourself from:\n{release.url}",
+        )
+
     def _startup_state(self) -> bool:
         try:
             return startup.is_enabled()
