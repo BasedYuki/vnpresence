@@ -82,16 +82,19 @@ committed on purpose. Only change it if the project's application is replaced.
 
 ### The icon
 
-`assets/icon.png` and `assets/icon-256.png` are generated - edit
-`tools/make_icon.py` and re-run it rather than editing the PNGs:
+The project's icons are hand-made files, not build output. `tools/make_icon.py`
+draws the fallback artwork it shipped with:
 
 ```bash
 python tools/make_icon.py
 ```
 
-`assets/icon.ico` is different: it is the Windows executable's icon, kept by
-hand, and the script never writes to it. If you want a generated one, pass
-`--ico` and it lands as `icon-generated.ico` instead.
+Three files are the project's identity and the script refuses to write to
+them: `icon.ico` (the .exe's icon), `icon-256.png` (the small icon Discord
+shows on the presence) and `icon.png`. A plain run writes `icon-source.png`
+instead, `--ico` adds `icon-generated.ico`, and only `--force` regenerates the
+real ones. `tests/test_make_icon.py` runs the script against a copy of the
+project's own files and fails if any of them changes.
 
 ### Commit messages
 

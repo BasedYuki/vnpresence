@@ -1,13 +1,19 @@
 """Draw the fallback VNPresence artwork.
 
 Run with:  python tools/make_icon.py
-Writes assets/icon.png (1024x1024) and assets/icon-256.png.
+Writes assets/icon-source.png, and nothing else.
 
-It deliberately does **not** touch assets/icon.ico. That file is the Windows
-executable's icon and is maintained by hand; regenerating it here would quietly
-overwrite whatever the project is actually shipping. Pass --ico if you really
-want a generated .ico, and it is written next to the others as
-icon-generated.ico so nothing is clobbered.
+Three files in assets/ are the project's real identity and this script must
+never overwrite any of them:
+
+* ``icon.ico``     - the Windows executable's icon
+* ``icon-256.png`` - the small icon Discord shows in the corner of the cover
+* ``icon.png``     - the large artwork
+
+They are maintained by hand. Regenerating them here would quietly replace what
+the project actually ships, which has already happened once. So the generated
+art goes to its own names, and the script refuses to write over a file it did
+not create. Pass ``--force`` only if you truly mean to reset the artwork.
 
 The motif is a visual novel's dialogue box: a rounded frame, two lines of
 "text", and the little advance marker in the corner. It has to stay readable at
@@ -59,25 +65,54 @@ def build() -> Image.Image:
     return image
 
 
+#: The project's identity. This script never writes to these names.
+PROTECTED = ("icon.ico", "icon-256.png", "icon.png")
+
+
+def _guard(name: str, force: bool) -> bool:
+    """False when writing this name would clobber the project's identity."""
+    return force or name not in PROTECTED
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else argv
+    force = "--force" in argv
     OUT.mkdir(exist_ok=True)
     icon = build()
-    icon.save(OUT / "icon.png")
-    icon.resize((256, 256), Image.LANCZOS).save(OUT / "icon-256.png")
-    written = ["icon.png", "icon-256.png"]
 
-    if "--ico" in argv:
-        # Never "icon.ico": that one belongs to whoever set the app's icon.
-        icon.save(
-            OUT / "icon-generated.ico",
-            sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
-        )
-        written.append("icon-generated.ico")
+    written, skipped = [], []
+    targets = [("icon-source.png", icon)]
+    if force:
+        # An explicit reset: the generated art becomes the project's art again.
+        targets = [
+            ("icon.png", icon),
+            ("icon-256.png", icon.resize((256, 256), Image.LANCZOS)),
+        ]
+
+    for name, image in targets:
+        if not _guard(name, force):
+            skipped.append(name)
+            continue
+        image.save(OUT / name)
+        written.append(name)
+
+    ico_name = "icon.ico" if force else "icon-generated.ico"
+    if "--ico" in argv or force:
+        if _guard(ico_name, force):
+            icon.save(
+                OUT / ico_name,
+                sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+            )
+            written.append(ico_name)
+        else:
+            skipped.append(ico_name)
 
     print(f"wrote {', '.join(written)} in {OUT}")
-    if "--ico" not in argv:
-        print("assets/icon.ico was left alone (it is the app icon; use --ico for a generated one)")
+    if not force:
+        print(f"left alone: {', '.join(PROTECTED)} (the project's own icons)")
+        print("use --force to overwrite them, or --ico for a generated icon-generated.ico")
+    if skipped:
+        print(f"skipped: {', '.join(skipped)}")
 
 
 if __name__ == "__main__":
