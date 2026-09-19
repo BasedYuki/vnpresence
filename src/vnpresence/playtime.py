@@ -1,22 +1,17 @@
-"""How long each game has been read, and the progress that follows from it.
+"""How long each game has been read, across every session.
 
 Discord shows how long the *current* session has been running, which says
-nothing about how far into a 60-hour novel someone is. To answer that, the time
-has to be remembered across sessions, so every session adds what it read to a
-small file and the percentage is computed from the total.
-
-The percentage is an estimate and is presented as one. VNDB publishes the
-average play time its users report for a novel (``length_minutes``); when a
-novel has no such votes, the rough length bucket is used instead, which is a far
-coarser guess. Reading speed varies enormously between people, routes get
-skipped and text gets re-read, so the number is a rough sense of where someone
-is - not a save-file-accurate figure, and it never pretends to be one.
+nothing about the forty hours that came before it. So every session adds what
+it read to a small file, and the total is what the presence shows: a fact the
+program actually knows, rather than a guess at how far through the story that
+puts you.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,12 +22,6 @@ import yaml
 from .config import config_dir
 
 log = logging.getLogger(__name__)
-
-#: Minutes to assume for each VNDB length bucket when nobody has voted on the
-#: actual play time. These are the middle of each published range; bucket 5 is
-#: open-ended (> 50h), so 60h is a deliberately conservative floor.
-BUCKET_MINUTES = {1: 60, 2: 360, 3: 1200, 4: 2400, 5: 3600}
-
 
 @dataclass
 class Entry:
@@ -97,6 +86,23 @@ class Playtime:
         """Seconds read across all previous sessions."""
         return self.get(game_id).seconds
 
+    def set(self, game_id: str, seconds: float) -> Entry:
+        """Replace a game's total outright.
+
+        For the hours read before VNPresence existed. No visual novel engine
+        exposes its play time in any portable way - the ones that record it at
+        all keep it inside an engine-specific save format, and Ren'Py's is a
+        pickle, which cannot be read from outside without running whatever is
+        in it. So the honest import is the reader typing the number they can
+        see on their own save screen.
+        """
+        entries = self.load()
+        entry = entries.get(game_id, Entry())
+        entry.seconds = max(float(seconds), 0.0)
+        entries[game_id] = entry
+        self._save(entries)
+        return entry
+
     # -- writing ----------------------------------------------------------
     def add(self, game_id: str, seconds: float, *, new_session: bool = False) -> Entry:
         """Add time to a game. Never raises - this must not end a session."""
@@ -126,36 +132,48 @@ class Playtime:
             log.debug("could not write %s", self.path, exc_info=True)
 
 
-# -- the estimate ---------------------------------------------------------
-def expected_minutes(length_minutes: int | None, bucket: int | None = None) -> int | None:
-    """How long this novel is expected to take, in minutes."""
-    if length_minutes and length_minutes > 0:
-        return int(length_minutes)
-    if bucket in BUCKET_MINUTES:
-        return BUCKET_MINUTES[bucket]
-    return None
+# -- how it reads on the card --------------------------------------------
+def format_reading_time(seconds: float | None) -> str | None:
+    """``45000`` -> ``"12h 30m read"``, for the presence line.
 
-
-def fraction(seconds_read: float, length_minutes: int | None) -> float | None:
-    """Progress as 0.0-1.0, or ``None`` when the novel's length is unknown.
-
-    Capped at 1.0: somebody who has read for longer than average is finishing,
-    not 140% done.
+    Deliberately coarser than the session timer: it is written out again every
+    fifteen seconds, and a number that ticks over every second would make the
+    whole line flicker for anyone watching. Under a minute reads as nothing at
+    all rather than "0m".
     """
-    if not length_minutes or length_minutes <= 0 or seconds_read <= 0:
+    if not seconds or seconds < 60:
         return None
-    return min(seconds_read / (length_minutes * 60), 1.0)
+    hours, minutes = divmod(int(seconds) // 60, 60)
+    if hours and minutes:
+        return f"{hours}h {minutes}m read"
+    if hours:
+        return f"{hours}h read"
+    return f"{minutes}m read"
 
 
-def percent(value: float | None) -> str | None:
-    """Format a fraction for the activity: ``0.337`` -> ``"34%"``.
+def parse_duration(text: str) -> float:
+    """Read a human-typed play time as seconds.
 
-    Anything above zero shows at least 1%, so the number appears as soon as a
-    session starts instead of sitting on a silent "0%" for the first half hour.
+    Accepts what someone would actually type off a save screen: ``50h``,
+    ``50h 30m``, ``90m``, ``50:30``, or a bare ``50`` meaning fifty hours -
+    nobody seeds a library with fifty seconds.
     """
-    if value is None:
-        return None
-    number = round(value * 100)
-    if number <= 0:
-        number = 1
-    return f"{min(number, 100)}%"
+    text = text.strip().lower()
+    if not text:
+        raise ValueError("no time given")
+
+    clock = re.fullmatch(r"(\d+):([0-5]?\d)", text)
+    if clock:
+        return int(clock.group(1)) * 3600 + int(clock.group(2)) * 60
+
+    if re.fullmatch(r"\d+(\.\d+)?", text):
+        return float(text) * 3600  # a bare number is hours
+
+    total = 0.0
+    matched = False
+    for amount, unit in re.findall(r"(\d+(?:\.\d+)?)\s*([hm])", text):
+        total += float(amount) * (3600 if unit == "h" else 60)
+        matched = True
+    if not matched:
+        raise ValueError(f"{text!r} is not a play time (try 50h, 50h 30m, 90m or 50:30)")
+    return total

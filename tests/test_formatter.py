@@ -136,14 +136,15 @@ def test_effective_privacy_resolves_auto():
     assert effective_privacy(profile(), None, CONFIG) is PrivacyMode.FULL
 
 
-# -- progress and the hand-typed note -------------------------------------
-def test_progress_joins_the_vndb_details_line():
-    payload = build(profile(), metadata(), PresenceState(progress=0.34))
-    assert payload["state"] == "Long (30-50h) • 2009 • 34%"
+# -- reading time and the hand-typed note ----------------------------------
+def test_the_total_reading_time_joins_the_vndb_details_line():
+    state = PresenceState(playtime_seconds=12 * 3600 + 40 * 60)
+    payload = build(profile(), metadata(), state)
+    assert payload["state"] == "Long (30-50h) \u2022 2009 \u2022 12h 40m read"
 
 
-def test_no_progress_leaves_the_line_exactly_as_it_was():
-    assert build(profile(), metadata())["state"] == "Long (30-50h) • 2009"
+def test_no_recorded_time_leaves_the_line_exactly_as_it_was():
+    assert build(profile(), metadata())["state"] == "Long (30-50h) \u2022 2009"
 
 
 def test_the_note_becomes_the_status_line():
@@ -153,19 +154,20 @@ def test_the_note_becomes_the_status_line():
     assert payload["name"] == "Steins;Gate"
 
 
-def test_on_an_old_client_progress_joins_the_status_instead():
+def test_on_an_old_client_the_time_joins_the_status_instead():
     """Without the `name` field there is no third line to put it on."""
     config = AppConfig(client_id="123", use_activity_name=False)
-    payload = build(profile(), metadata(), PresenceState(progress=0.5), config=config)
+    state = PresenceState(playtime_seconds=2 * 3600)
+    payload = build(profile(), metadata(), state, config=config)
     assert payload["details"] == "Steins;Gate"
-    assert payload["state"] == "Reading • 50%"
+    assert payload["state"] == "Reading \u2022 2h read"
 
 
-def test_private_mode_leaks_neither_the_route_nor_the_progress():
+def test_private_mode_leaks_neither_the_route_nor_the_reading_total():
     """A route name identifies the novel as surely as its title does."""
-    state = PresenceState(status_text="Ayamine route", progress=0.9)
+    state = PresenceState(status_text="Ayamine route", playtime_seconds=40 * 3600)
     payload = build(profile(privacy=PrivacyMode.PRIVATE), metadata(), state)
     assert payload["details"] == CONFIG.private_title
     assert payload["state"] == CONFIG.default_status_text
-    assert "90%" not in str(payload)
+    assert "40h" not in str(payload)
     assert "Ayamine" not in str(payload)

@@ -62,16 +62,25 @@ class GameProfile:
     status_text: str | None = None  # overrides the second presence line
     client_id: str | None = None  # advanced: per-game Discord application
     show_buttons: bool | None = None  # None -> follow global config
-    show_progress: bool | None = None  # None -> follow global config
+    show_playtime: bool | None = None  # None -> follow global config
 
     # Plugins
     plugin: str | None = None  # name of a StateProvider plugin
     plugin_options: dict[str, Any] = field(default_factory=dict)
     metadata_provider: str | None = None  # force a MetadataProvider by name
 
+    #: Old profile keys and what they are called now. Profiles written by an
+    #: older version have to keep loading: renaming a key without an alias
+    #: would turn someone's library into "unknown profile key" errors.
+    RENAMED = {"show_progress": "show_playtime"}
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GameProfile:
         data = dict(data)
+        for old, new in cls.RENAMED.items():
+            if old in data:
+                data.setdefault(new, data.pop(old))
+                data.pop(old, None)
         known = {f for f in cls.__dataclass_fields__}  # noqa: PLC0206
         unknown = set(data) - known
         if unknown:
@@ -142,12 +151,10 @@ class GameMetadata:
     languages: list[str] = field(default_factory=list)
     platforms: list[str] = field(default_factory=list)
     length: str | None = None
-    #: Expected play time in minutes. VNDB's average of user-reported times
-    #: when the novel has votes, otherwise the middle of its length bucket -
-    #: ``length_votes`` is how you tell the two apart.
-    length_minutes: int | None = None
-    length_votes: int = 0
     rating: float | None = None
+    #: How many people rated it. Not for display: it is how a well-known novel
+    #: is told from a near-empty entry that happens to share its name.
+    votes: int = 0
     nsfw: bool = False
     url: str | None = None
     source: str = "unknown"
@@ -162,9 +169,8 @@ class GameMetadata:
             "languages": list(self.languages),
             "platforms": list(self.platforms),
             "length": self.length,
-            "length_minutes": self.length_minutes,
-            "length_votes": self.length_votes,
             "rating": self.rating,
+            "votes": self.votes,
             "nsfw": self.nsfw,
             "url": self.url,
             "source": self.source,
@@ -181,15 +187,15 @@ class PresenceState:
     """Live, changing information about the current session.
 
     Built-in providers return a static state; a plugin can return the current
-    chapter, route, or reading progress instead.
+    chapter, route, or play time instead.
     """
 
     status_text: str | None = None
     small_text: str | None = None
     small_image: str | None = None
-    #: How far into the novel the reader is, 0.0-1.0. The session fills this in
-    #: from the play time it has recorded; a plugin that knows better - a save
-    #: file, a chapter count - can set it directly and overrule the estimate.
-    progress: float | None = None
+    #: Total time this game has been read, in seconds, across every session.
+    #: The session fills this in from the history it keeps; a plugin with a
+    #: better figure - one the game itself reports - can set it directly.
+    playtime_seconds: float | None = None
     #: Restart the elapsed timer from this unix timestamp (rarely needed).
     start_timestamp: int | None = None

@@ -14,7 +14,6 @@ from .launcher import LaunchError, TrackedGame, find_running, launch, resolve_tr
 from .models import GameMetadata, GameProfile, PresenceState, PrivacyMode
 from .notes import read_note
 from .playtime import Playtime
-from .playtime import fraction as progress_fraction
 from .plugins import PluginRegistry, build_registry
 from .presence import DiscordPresence
 
@@ -32,8 +31,6 @@ class SessionResult:
     metadata_source: str
     #: Everything ever read of this game, this session included.
     total_seconds: float = 0.0
-    #: The progress estimate at the end, 0.0-1.0, or None if length is unknown.
-    progress: float | None = None
 
 
 class GameSession:
@@ -56,8 +53,8 @@ class GameSession:
         self.playtime = playtime or Playtime()
         self.metadata: GameMetadata | None = None
         self.start_time = 0.0
-        #: Seconds read before this session started; the progress estimate is
-        #: about the novel, not about today.
+        #: Seconds read before this session started: the total shown is about
+        #: the novel, not about today.
         self.previous_seconds = 0.0
         self._recorded = 0.0  # of this session, already written to disk
         self._stop = False
@@ -86,32 +83,27 @@ class GameSession:
 
     # -- what the reader adds to the picture -------------------------------
     def live_state(self, state: PresenceState) -> PresenceState:
-        """The plugin's state plus the note and the progress estimate.
+        """The plugin's state plus the note and the total reading time.
 
         Returns a copy: the state object belongs to the plugin that produced it
         and may well be reused on the next poll.
         """
         note = read_note(self.profile.id)
-        progress = state.progress
-        if progress is None and self._progress_enabled():
-            # A plugin that knows the real figure has already set it; this is
-            # only the fallback for the vast majority of games that cannot say.
-            progress = progress_fraction(
-                self.previous_seconds + self.elapsed(),
-                self.metadata.length_minutes if self.metadata else None,
-            )
+        total = state.playtime_seconds
+        if total is None and self._playtime_enabled():
+            total = self.previous_seconds + self.elapsed()
         return replace(
             state,
             # The reader typed the note on purpose, so it outranks a plugin's
             # guess at the same line.
             status_text=note or state.status_text,
-            progress=progress,
+            playtime_seconds=total,
         )
 
-    def _progress_enabled(self) -> bool:
-        if self.profile.show_progress is not None:
-            return self.profile.show_progress
-        return self.config.show_progress
+    def _playtime_enabled(self) -> bool:
+        if self.profile.show_playtime is not None:
+            return self.profile.show_playtime
+        return self.config.show_playtime
 
     def elapsed(self) -> float:
         return max(time.time() - self.start_time, 0.0) if self.start_time else 0.0
@@ -213,9 +205,6 @@ class GameSession:
             privacy=privacy,
             metadata_source=(self.metadata or _empty()).source,
             total_seconds=total,
-            progress=progress_fraction(
-                total, self.metadata.length_minutes if self.metadata else None
-            ),
         )
 
     def stop(self) -> None:

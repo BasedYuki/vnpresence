@@ -12,6 +12,21 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """The suite runs offline. A test that reaches VNDB is a bug in the test."""
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(
+            "a test tried to reach VNDB over the network - pass a fake session to "
+            "VNDBClient, or stub the function that calls it"
+        )
+
+    # Patched at the HTTP call, not at the client: tests that hand VNDBClient a
+    # fake session are exercising the real parsing code and must keep working.
+    monkeypatch.setattr("vnpresence.vndb.requests.post", refuse)
+
+
+@pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
     home = tmp_path / "vnpresence-home"
     home.mkdir()

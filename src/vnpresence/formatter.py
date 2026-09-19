@@ -5,7 +5,7 @@ Discord's layout, and what we put where::
     Playing Steins;Gate       <- name         (the game; see use_activity_name)
     [cover]  Steins;Gate      <- the card's own title line
              Reading          <- details      (status text / note / plugin state)
-             Long • 2009 • 34%<- state        (what VNDB knows + progress)
+             Long • 2009 • 12h read   <- state (VNDB, plus total time read)
              01:23 elapsed    <- timestamps.start
              [View on VNDB]   <- buttons
 
@@ -22,7 +22,7 @@ from typing import Any
 
 from .config import AppConfig
 from .models import GameMetadata, GameProfile, PresenceState, PrivacyMode
-from .playtime import percent
+from .playtime import format_reading_time
 from .providers.base import PresenceFormatter
 
 MAX_FIELD = 128
@@ -74,7 +74,7 @@ class DefaultFormatter(PresenceFormatter):
 
         if mode is PrivacyMode.PRIVATE:
             # Nothing that came from the game or the reader goes out here. A
-            # route name ("Ayamine route") or a progress figure would identify
+            # route name ("Ayamine route") or a reading total would identify
             # the novel just as surely as its title, which is the one thing
             # private mode exists to withhold.
             return {
@@ -86,7 +86,7 @@ class DefaultFormatter(PresenceFormatter):
         title = profile.title or (metadata.title if metadata else "Visual Novel")
         status = state.status_text or profile.status_text or config.default_status_text
 
-        progress = percent(state.progress)
+        read_for = format_reading_time(state.playtime_seconds)
 
         if config.use_activity_name:
             # Current Discord clients honour `name`, so the header itself can be
@@ -95,17 +95,17 @@ class DefaultFormatter(PresenceFormatter):
             payload: dict[str, Any] = {
                 "name": clamp(title),
                 "details": clamp(status),
-                "state": clamp(_join(_subtitle(metadata) if metadata else None, progress)),
+                "state": clamp(_join(_subtitle(metadata) if metadata else None, read_for)),
                 "start": start,
             }
         else:
             # Older clients ignore `name` and print the application's name, so
             # the title has to live in `details` or it would be lost entirely.
-            # There is no third line to put the progress on, so it joins the
+            # There is no third line for the reading time, so it joins the
             # status rather than pushing the title off the card.
             payload = {
                 "details": clamp(title),
-                "state": clamp(_join(status, progress)),
+                "state": clamp(_join(status, read_for)),
                 "start": start,
             }
 

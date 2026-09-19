@@ -62,27 +62,50 @@ class LibraryWatcher:
         return [p for p in self.library.load_all() if p.privacy is not PrivacyMode.OFF]
 
     def find_match(self, profiles: list[GameProfile] | None = None) -> Match | None:
-        """Return the first library game that is currently running."""
+        """Return the first library game that is currently running.
+
+        Matching is by full path first and by file name only as a fallback,
+        because file names are not unique. Every Science Adventure release
+        ships the same launcher executable, so a library with Steins;Gate,
+        CHAOS;HEAD NOAH and Robotics;Notes in it has three different games
+        answering to one name - and by name alone whichever loaded first wins
+        every time, which is why they all showed up as the same novel.
+
+        A name shared by two profiles is therefore ignored for both: it cannot
+        identify either of them. Explicit ``process_names`` are kept whatever
+        happens, because someone typed those on purpose.
+        """
         profiles = self.watchable() if profiles is None else profiles
         if not profiles:
             return None
 
-        wanted: dict[str, GameProfile] = {}
+        by_path: dict[str, GameProfile] = {}
+        by_declared_name: dict[str, GameProfile] = {}
+        exe_name_owners: dict[str, list[GameProfile]] = {}
         for profile in profiles:
+            if profile.path:
+                by_path.setdefault(profile.path.replace("/", "\\").lower(), profile)
             for name in profile.process_names:
-                wanted.setdefault(name.lower(), profile)
+                by_declared_name.setdefault(name.lower(), profile)
             _, exe_name = _split_path(profile.path or "")
             if exe_name:
-                wanted.setdefault(exe_name, profile)
+                exe_name_owners.setdefault(exe_name, []).append(profile)
 
-        for process in psutil.process_iter(["pid", "name"]):
+        # Only names that belong to exactly one game are usable as a signal.
+        by_exe_name = {
+            name: owners[0] for name, owners in exe_name_owners.items() if len(owners) == 1
+        }
+
+        for process in psutil.process_iter(["pid", "name", "exe"]):
             try:
-                name = (process.info.get("name") or "").lower()
+                info = process.info
+                name = (info.get("name") or "").lower()
+                exe = (info.get("exe") or "").replace("/", "\\").lower()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-            profile = wanted.get(name)
+            profile = by_path.get(exe) or by_declared_name.get(name) or by_exe_name.get(name)
             if profile is not None:
-                return Match(profile, process.info["pid"], name)
+                return Match(profile, info["pid"], name)
         return None
 
     # -- loop -------------------------------------------------------------

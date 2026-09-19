@@ -1,13 +1,14 @@
-"""Reading history and the progress estimate built on it.
+"""The reading history, and how the total reads on the card.
 
-Two things matter here. The history must accumulate rather than overwrite -
-two sessions of an hour are two hours, and a second VNPresence running in the
-background must not wipe the first one's total. And the estimate must stay
-honest: no percentage at all when the novel's length is unknown, and never
-more than 100% for someone who reads slowly.
+The history must accumulate rather than overwrite - two sessions of an hour are
+two hours, and a second VNPresence running in the background must not wipe the
+first one's total. The formatting is deliberately coarse: the line is rewritten
+every fifteen seconds and a ticking number would make it flicker.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from vnpresence import playtime
 from vnpresence.playtime import Playtime
@@ -58,34 +59,75 @@ def test_garbage_entries_are_ignored_rather_than_crashing(tmp_path):
     assert history["y"].seconds == 0.0
 
 
-# -- the estimate ---------------------------------------------------------
-def test_progress_is_time_read_over_time_expected():
-    assert playtime.fraction(seconds_read=3600, length_minutes=120) == 0.5
+# -- how it reads on the card --------------------------------------------
+def test_hours_and_minutes():
+    assert playtime.format_reading_time(12 * 3600 + 30 * 60) == "12h 30m read"
 
 
-def test_no_length_means_no_guess():
-    assert playtime.fraction(3600, None) is None
-    assert playtime.fraction(3600, 0) is None
+def test_a_whole_number_of_hours_drops_the_minutes():
+    assert playtime.format_reading_time(3 * 3600) == "3h read"
 
 
-def test_nothing_read_yet_shows_nothing():
-    assert playtime.fraction(0, 600) is None
+def test_under_an_hour_is_just_minutes():
+    assert playtime.format_reading_time(45 * 60) == "45m read"
 
 
-def test_a_slow_reader_never_goes_past_one_hundred_percent():
-    assert playtime.fraction(seconds_read=10**7, length_minutes=120) == 1.0
-    assert playtime.percent(playtime.fraction(10**7, 120)) == "100%"
+def test_the_seconds_never_show_so_the_line_does_not_flicker():
+    a = playtime.format_reading_time(3600 + 5)
+    b = playtime.format_reading_time(3600 + 50)
+    assert a == b == "1h read"
 
 
-def test_the_first_minutes_show_one_percent_rather_than_zero():
-    assert playtime.percent(playtime.fraction(60, 3600)) == "1%"
+def test_the_first_minute_shows_nothing_rather_than_zero():
+    assert playtime.format_reading_time(30) is None
+    assert playtime.format_reading_time(0) is None
+    assert playtime.format_reading_time(None) is None
 
 
-def test_percent_of_nothing_is_nothing():
-    assert playtime.percent(None) is None
+# -- seeding a game that was read long before VNPresence -------------------
+def test_set_replaces_the_total_instead_of_adding_to_it():
+    store = Playtime()
+    store.add("rewrite", 3600)
+    store.set("rewrite", 50 * 3600)
+    assert store.total("rewrite") == 50 * 3600
 
 
-def test_votes_are_preferred_and_the_bucket_is_the_fallback():
-    assert playtime.expected_minutes(2400, bucket=1) == 2400  # real votes win
-    assert playtime.expected_minutes(None, bucket=4) == playtime.BUCKET_MINUTES[4]
-    assert playtime.expected_minutes(None, bucket=None) is None
+def test_time_carries_on_accumulating_after_a_set():
+    store = Playtime()
+    store.set("rewrite", 50 * 3600)
+    store.add("rewrite", 1800, new_session=True)
+    assert store.total("rewrite") == 50 * 3600 + 1800
+
+
+def test_setting_a_game_that_was_never_played_just_works():
+    Playtime().set("new-one", 7200)
+    assert Playtime().total("new-one") == 7200
+
+
+@pytest.mark.parametrize(
+    ("typed", "hours"),
+    [
+        ("50h", 50),
+        ("50", 50),          # a bare number is hours: nobody seeds 50 seconds
+        ("50h 30m", 50.5),
+        ("50h30m", 50.5),
+        ("50:30", 50.5),
+        ("90m", 1.5),
+        ("2.5h", 2.5),
+        ("  12H  ", 12),
+    ],
+)
+def test_the_parser_takes_what_a_save_screen_shows(typed, hours):
+    assert playtime.parse_duration(typed) == pytest.approx(hours * 3600)
+
+
+def test_spelled_out_units_work_too():
+    """People type what they mean; "50 hours" should not be an error."""
+    assert playtime.parse_duration("50 hours") == 50 * 3600
+    assert playtime.parse_duration("90 minutes") == 90 * 60
+
+
+@pytest.mark.parametrize("typed", ["", "   ", "soon", "a while", "h", "??"])
+def test_nonsense_is_refused_with_an_example(typed):
+    with pytest.raises(ValueError):
+        playtime.parse_duration(typed)

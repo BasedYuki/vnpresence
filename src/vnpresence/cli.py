@@ -10,12 +10,11 @@ import click
 
 from . import __version__
 from .config import AppConfig, config_dir, config_file, games_dir
-from .launcher import LaunchError
+from .launcher import LaunchError, _split_path
 from .library import Library
 from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
 from .notes import clear_note, read_note, write_note
-from .playtime import Playtime, percent
-from .playtime import fraction as progress_fraction
+from .playtime import Playtime, parse_duration
 from .plugins import build_registry
 from .session import GameSession, format_duration
 from .titles import guess_title
@@ -92,6 +91,7 @@ def add_game(
     )
     saved = library.save(profile)
     click.secho(f"\u2713 added {profile.title}", fg="green")
+    _warn_about_shared_launcher(library, profile)
     click.echo(f"  id      : {profile.id}")
     click.echo(f"  vndb    : {profile.vndb_id or '-'}")
     click.echo(f"  privacy : {profile.privacy.value}")
@@ -133,9 +133,7 @@ def play(game: str, attach: bool) -> None:
         raise click.ClickException(str(exc)) from exc
     summary = f"\u2713 {result.title}: {format_duration(result.seconds)}"
     if result.total_seconds > result.seconds:
-        summary += f" (total {format_duration(result.total_seconds)})"
-    if result.progress is not None:
-        summary += f" - about {percent(result.progress)} in"
+        summary += f" ({format_duration(result.total_seconds)} in total)"
     click.secho(summary, fg="green")
 
 
@@ -177,6 +175,70 @@ def link(game: str, reference: str, keep_title: bool) -> None:
         click.secho("  VNDB marks this 18+, so 'auto' privacy will hide it.", fg="yellow")
 
 
+@main.command("rematch")
+@click.argument("game", required=False)
+@click.option("--all", "do_all", is_flag=True, help="Every game that has no VNDB match.")
+def rematch(game: str | None, do_all: bool) -> None:
+    """Search VNDB again for games that ended up without a match.
+
+    A game added while VNDB was unreachable - or whose first guess was turned
+    down - keeps working, but has no cover art. This goes back over them
+    without touching anything else about the game:
+
+        vnpresence rematch --all
+    """
+    library = Library()
+    config = AppConfig.load()
+    if game:
+        found = library.find(game)
+        if found is None:
+            raise click.ClickException(f"no game matches {game!r}")
+        targets = [found]
+    elif do_all:
+        targets = [p for p in library.load_all() if not p.vndb_id]
+    else:
+        raise click.ClickException("name a game, or pass --all")
+
+    if not targets:
+        click.echo("Every game already has a VNDB match.")
+        return
+
+    fixed = 0
+    for profile in targets:
+        click.echo(f"\n{profile.title}")
+        metadata, vndb_id = _search_interactive(profile.title, config)
+        if metadata is None or vndb_id is None:
+            click.secho("  left as it is", fg="yellow")
+            continue
+        profile.vndb_id = vndb_id
+        library.save(profile)  # the title is left alone: it may be deliberate
+        fixed += 1
+        click.secho(f"  \u2713 {metadata.title} ({metadata.url})", fg="green")
+    click.secho(f"\n{fixed} of {len(targets)} matched.", fg="green" if fixed else None)
+
+
+@main.command("rename")
+@click.argument("game")
+@click.argument("title", nargs=-1, required=True)
+def rename(game: str, title: tuple[str, ...]) -> None:
+    """Change the name shown on the presence, keeping everything else.
+
+    Some releases are not on VNDB at all - fan translations, remakes, cuts
+    like STEINS;GATE Re:Boot, which VNDB folds into its parent entry. Link the
+    game to the parent so it still gets a cover, then call it what it is:
+
+        vnpresence link sg v2002
+        vnpresence rename sg "STEINS;GATE Re:Boot"
+    """
+    library = Library()
+    profile = library.find(game)
+    if profile is None:
+        raise click.ClickException(f"no game matches {game!r} (try: vnpresence list)")
+    profile.title = " ".join(title).strip()
+    library.save(profile)
+    click.secho(f"\u2713 now called {profile.title}", fg="green")
+
+
 @main.command("note")
 @click.argument("game")
 @click.argument("text", nargs=-1)
@@ -210,9 +272,44 @@ def note(game: str, text: tuple[str, ...], clear: bool) -> None:
 
 @main.command("stats")
 @click.argument("game", required=False)
-def stats(game: str | None) -> None:
-    """Show how long each game has been read, and roughly how far in that is."""
+@click.option(
+    "--set",
+    "set_to",
+    metavar="TIME",
+    help="Set this game's total, for hours read before VNPresence (50h, 50h 30m, 50:30).",
+)
+@click.option("--add", "add_time", metavar="TIME", help="Add time to this game's total.")
+def stats(game: str | None, set_to: str | None, add_time: str | None) -> None:
+    """Show how long each game has been read.
+
+    A game you have been reading for years starts at zero, because VNPresence
+    was not there for those hours. Tell it once:
+
+        vnpresence stats rewrite --set 50h
+    """
     library = Library()
+    if set_to or add_time:
+        if not game:
+            raise click.ClickException("say which game: vnpresence stats <game> --set 50h")
+        profile = library.find(game)
+        if profile is None:
+            raise click.ClickException(f"no game matches {game!r}")
+        try:
+            seconds = parse_duration(set_to or add_time or "")
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        history = Playtime()
+        entry = (
+            history.set(profile.id, seconds)
+            if set_to
+            else history.add(profile.id, seconds)
+        )
+        click.secho(
+            f"\u2713 {profile.title}: {format_duration(entry.seconds)} read in total",
+            fg="green",
+        )
+        return
+
     profiles = library.load_all()
     if game:
         found = library.find(game)
@@ -224,7 +321,6 @@ def stats(game: str | None) -> None:
         return
 
     history = Playtime().load()
-    config = AppConfig.load()
     width = max(len(p.title) for p in profiles)
     shown = 0
     for profile in profiles:
@@ -236,25 +332,11 @@ def stats(game: str | None) -> None:
             f"{profile.title.ljust(width)}  {format_duration(entry.seconds).rjust(8)}"
             f"  {entry.sessions} session{'s' if entry.sessions != 1 else ''}"
         )
-        estimate = _progress_for(profile, entry.seconds, config)
-        if estimate:
-            line += f"  ~{estimate}"
+        if entry.last_played:
+            line += f"  last {entry.last_played[:10]}"
         click.echo(line)
     if not shown:
         click.echo("Nothing read yet - play something first.")
-
-
-def _progress_for(profile: GameProfile, seconds: float, config: AppConfig):
-    """The progress string for one game, or None if it cannot be worked out."""
-    if not profile.vndb_id:
-        return None
-    try:
-        metadata = VNDBClient(cache_days=config.cache_days).get(profile.vndb_id)
-    except VNDBError:
-        return None
-    if metadata is None:
-        return None
-    return percent(progress_fraction(seconds, metadata.length_minutes))
 
 
 @main.command("watch")
@@ -400,6 +482,7 @@ def doctor() -> None:
 
     games = Library().load_all()
     click.echo(f"games      : {len(games)}")
+    _report_unmatched(games)
     for profile in games:
         if profile.path and not Path(profile.path).exists():
             click.secho(f"  ! missing executable for {profile.id}: {profile.path}", fg="yellow")
@@ -434,6 +517,21 @@ def doctor() -> None:
 
 
 # -- helpers --------------------------------------------------------------
+def _report_unmatched(profiles: list[GameProfile]) -> None:
+    """Games with no VNDB link have no cover, and nothing else says so."""
+    unmatched = [p for p in profiles if not p.vndb_id]
+    if not unmatched:
+        return
+    click.secho(
+        f"no vndb   : {len(unmatched)} game(s) have no VNDB match, so no cover art",
+        fg="yellow",
+    )
+    for profile in unmatched[:5]:
+        click.echo(f"            {profile.id}  ->  vnpresence link {profile.id} <name or link>")
+    if len(unmatched) > 5:
+        click.echo(f"            ... and {len(unmatched) - 5} more")
+
+
 def _vndb_check(config: AppConfig) -> None:
     try:
         VNDBClient(cache_days=config.cache_days).search("steins gate", limit=1)
@@ -441,6 +539,25 @@ def _vndb_check(config: AppConfig) -> None:
     except Exception as exc:
         click.secho(f"vndb       : not reachable ({exc})", fg="yellow")
 
+
+
+def _warn_about_shared_launcher(library: Library, profile: GameProfile) -> None:
+    """Tell the user when this executable is already another game's."""
+    clashes = library.sharing_exe_name(profile)
+    if not clashes:
+        return
+    names = ", ".join(p.title for p in clashes[:3])
+    _, exe_name = _split_path(profile.path or "")
+    click.secho(
+        f"\n! {exe_name} is also how you start {names}. That is normal for a series "
+        "- they share one launcher.",
+        fg="yellow",
+    )
+    click.echo(
+        "  VNPresence tells them apart by full path, so this works. It is still "
+        "steadier to point at\n  the game's own executable instead of the launcher, "
+        "or to set 'process_names' in the profile."
+    )
 
 
 def _lookup(vndb_id: str, config: AppConfig):

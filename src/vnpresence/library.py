@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from .config import games_dir
+from .launcher import _split_path
 from .models import GameProfile, slugify
 
 log = logging.getLogger(__name__)
@@ -85,3 +86,26 @@ class Library:
             path.unlink()
             return True
         return False
+
+    def sharing_exe_name(self, profile: GameProfile) -> list[GameProfile]:
+        """Other games added from a different file with the same name.
+
+        Shared launcher executables are the norm in series: every Science
+        Adventure release ships the same launcher, so pointing two of them at
+        it leaves nothing to tell the running processes apart. VNPresence
+        matches on the full path first and copes, but it is worth saying out
+        loud, because pointing at the game's own executable instead is both
+        more reliable and something only the person adding it can do.
+        """
+        _, exe_name = _split_path(profile.path or "")
+        if not exe_name:
+            return []
+        mine = (profile.path or "").replace("/", "\\").lower()
+        clashes = []
+        for other in self.load_all():
+            if other.id == profile.id or not other.path:
+                continue
+            _, other_name = _split_path(other.path)
+            if other_name == exe_name and other.path.replace("/", "\\").lower() != mine:
+                clashes.append(other)
+        return clashes

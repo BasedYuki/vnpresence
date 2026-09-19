@@ -19,6 +19,7 @@ from .launcher import LaunchError
 from .library import Library
 from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
 from .notes import read_note, write_note
+from .playtime import Playtime, format_reading_time, parse_duration
 from .session import GameSession, format_duration
 from .titles import guess_title
 from .vndb import VNDBClient, VNDBError
@@ -31,6 +32,13 @@ PRIVACY_HELP = {
     PrivacyMode.PRIVATE: "Private - neutral activity, no title",
     PrivacyMode.OFF: "Off - publish nothing",
 }
+
+
+def _vndb_id_of(metadata) -> str | None:
+    """The v-number out of a VNDB url - what a profile stores."""
+    if metadata is None:
+        return None
+    return (metadata.url or "").rsplit("/", 1)[-1] or None
 
 
 class App(tk.Tk):
@@ -74,6 +82,10 @@ class App(tk.Tk):
         ttk.Button(buttons, text="Add game…", command=self.add_game).pack(side="left", padx=4)
         ttk.Button(buttons, text="Remove", command=self.remove_selected).pack(side="left")
         ttk.Button(buttons, text="VNDB link…", command=self.relink_selected).pack(
+            side="left", padx=4
+        )
+        ttk.Button(buttons, text="Time read…", command=self.set_playtime).pack(side="left")
+        ttk.Button(buttons, text="Rename…", command=self.rename_selected).pack(
             side="left", padx=4
         )
         ttk.Button(buttons, text="Stop", command=self.stop_session).pack(side="left", padx=4)
@@ -173,30 +185,20 @@ class App(tk.Tk):
             return
         # The .exe is usually named after the engine, the folder after the game.
         guess = guess_title(path)
-        metadata, vndb_id = self._lookup(guess)
+        candidates, problem = self._candidates(guess)
+        metadata = candidates[0] if candidates else None
 
         if metadata is None or not messagebox.askyesno(
             "VNDB match",
             f"Is this the right game?\n\n{metadata.title}" if metadata else
             f"Nothing on VNDB matches “{guess}”.\n\nTry another name or a VNDB link?",
         ):
-            # Offering the link here is the point: if the search picked the
-            # sequel, no other name will fix it - the two share one.
-            typed = simpledialog.askstring(
-                "Game name",
-                "Type the game's name, or paste its VNDB link\n"
-                "(e.g. https://vndb.org/v2002):",
-                initialvalue=guess,
-                parent=self,
-            )
-            if typed:
-                metadata, vndb_id = self._lookup(typed)
-                if metadata is None:
-                    metadata, vndb_id = None, None
-                    guess = typed
-            else:
-                metadata, vndb_id = None, None
+            picked, typed_name = self._ask_for_another(guess, candidates)
+            metadata = picked
+            if picked is None and typed_name:
+                guess = typed_name  # at least call it what they typed
 
+        vndb_id = _vndb_id_of(metadata)
         title = metadata.title if metadata else guess
 
         profile = GameProfile(
@@ -208,7 +210,78 @@ class App(tk.Tk):
         )
         self.library.save(profile)
         self.refresh()
+        if profile.vndb_id is None:
+            # Silence is what left games sitting with no cover and no reason
+            # given - a windowed .exe has nowhere to print a warning to.
+            messagebox.showinfo(
+                "VNPresence",
+                f"{title} was added without a VNDB match, so it has no cover "
+                f"art or details.\n\n{problem or ''}"
+                "To fix it any time: select the game, press "
+                "“VNDB link…” and type its name or paste its VNDB link.",
+            )
+        clashes = self.library.sharing_exe_name(profile)
+        if clashes:
+            # Series share one launcher executable; matching by path handles it,
+            # but the game's own .exe is steadier and only they can pick it.
+            messagebox.showinfo(
+                "VNPresence",
+                f"{title} is started by the same file as "
+                f"{', '.join(p.title for p in clashes[:3])}.\n\n"
+                "That is normal for a series - they share a launcher - and "
+                "VNPresence tells them apart by their full path.\n\n"
+                "If auto-detect ever picks the wrong one, add the game's own "
+                "executable instead of the launcher.",
+            )
         self.status.set(f"Added {title}")
+
+    def _candidates(self, term: str):
+        """VNDB matches for a name or a link, and why there are none if so.
+
+        The reason matters. "Nothing is called that" and "VNDB did not answer"
+        need different things from the reader, and a windowed .exe has no
+        console to tell them apart in.
+        """
+        client = VNDBClient(cache_days=self.config_data.cache_days)
+        try:
+            if looks_like_vndb_ref(term):
+                found = client.get(normalise_vndb_id(term))
+                return ([found] if found else []), None
+            return client.search(term, limit=5), None
+        except VNDBError as exc:
+            log.warning("VNDB lookup failed: %s", exc)
+            return [], f"VNDB could not be reached: {exc}\n\n"
+        except ValueError:
+            return [], None
+
+    def _ask_for_another(self, guess: str, candidates: list):
+        """Offer the runners-up, a name, or a link. Returns (match, typed).
+
+        Showing the other matches is the point: a side story sits right next to
+        its parent in the results ("Tsukihime PLUS-DISC" under "Tsukihime"), and
+        before this the only way past a wrong first guess was to type a better
+        name - which for a side story does not exist.
+        """
+        others = candidates[1:5]
+        prompt = "Type the game's name, or paste its VNDB link\n(e.g. https://vndb.org/v2002)"
+        if others:
+            listed = "\n".join(f"{i}. {item.title}" for i, item in enumerate(others, start=2))
+            prompt = (
+                "Did you mean one of these? Type its number.\n\n"
+                + listed
+                + "\n\nOr type another name, or paste a VNDB link"
+            )
+        typed = (
+            simpledialog.askstring("Game name", prompt + ":", initialvalue=guess, parent=self)
+            or ""
+        ).strip()
+        if not typed:
+            return None, ""
+        if typed.isdigit():
+            index = int(typed) - 2
+            return (others[index] if 0 <= index < len(others) else None), ""
+        found, _ = self._candidates(typed)
+        return (found[0] if found else None), typed
 
     def _lookup(self, term: str):
         """Find a game on VNDB by name **or** by link; (metadata, id) or (None, None).
@@ -225,7 +298,10 @@ class App(tk.Tk):
                 if metadata is None:
                     return None, None
                 return metadata, (metadata.url or "").rsplit("/", 1)[-1] or None
-            results = client.search(term, limit=1)
+            # Not limit=1: VNDB's top hit for a common name can be a near-empty
+            # entry with the same title, so ask for several and let `rank`
+            # prefer the one people actually mean.
+            results = client.search(term, limit=5)
         except (VNDBError, ValueError) as exc:
             log.warning("VNDB lookup failed: %s", exc)
             return None, None
@@ -253,24 +329,93 @@ class App(tk.Tk):
             messagebox.showinfo("VNPresence", "Pick a game first.")
             return
         typed = simpledialog.askstring(
-            "VNDB link",
-            f"Paste the VNDB link for {profile.title}\n(e.g. https://vndb.org/v2400):",
+            "VNDB match",
+            f"Type a name or paste a VNDB link for {profile.title}\n"
+            "(e.g. Kagetsu Tooya, or https://vndb.org/v47):",
             initialvalue=f"https://vndb.org/{profile.vndb_id}" if profile.vndb_id else "",
             parent=self,
         )
         if not typed:
             return
-        metadata, vndb_id = self._lookup(typed)
+        candidates, problem = self._candidates(typed)
+        metadata = candidates[0] if candidates else None
+        if metadata is None or not messagebox.askyesno(
+            "VNDB match", f"Use this one?\n\n{metadata.title}" if metadata else
+            f"{problem or ''}Nothing on VNDB matches “{typed}”.\n\nTry something else?",
+        ):
+            metadata, _ = self._ask_for_another(typed, candidates)
+        vndb_id = _vndb_id_of(metadata)
         if metadata is None or vndb_id is None:
-            messagebox.showerror(
-                "VNPresence", f"VNDB has nothing at “{typed}”, so nothing was changed."
-            )
+            messagebox.showinfo("VNPresence", "Nothing was changed.")
             return
         profile.vndb_id = vndb_id
-        profile.title = metadata.title
+        # Keep a name the reader gave this game themselves: a release VNDB
+        # folds into its parent (STEINS;GATE Re:Boot) still wants the parent's
+        # cover, under its own name.
+        if profile.title == metadata.title or messagebox.askyesno(
+            "Title",
+            f"Rename it to VNDB's title?\n\n{profile.title}  ->  {metadata.title}",
+        ):
+            profile.title = metadata.title
         self.library.save(profile)
         self.refresh()
         self.status.set(f"{profile.title} is now linked to {metadata.url}")
+
+    def set_playtime(self) -> None:
+        """Seed the total for a game that was being read long before this app.
+
+        Nothing can read that number out of the game - no engine exposes its
+        play time in a portable way - so the reader types what their own save
+        screen says, once.
+        """
+        profile = self.selected_profile()
+        if profile is None:
+            messagebox.showinfo("VNPresence", "Pick a game first.")
+            return
+        history = Playtime()
+        current = history.total(profile.id)
+        typed = simpledialog.askstring(
+            "Time read",
+            f"How long have you read {profile.title} in total?\n"
+            "(e.g. 50h, 50h 30m, 90m or 50:30)",
+            initialvalue=f"{current / 3600:.1f}h" if current else "",
+            parent=self,
+        )
+        if not typed:
+            return
+        try:
+            seconds = parse_duration(typed)
+        except ValueError as exc:
+            messagebox.showerror("VNPresence", str(exc))
+            return
+        entry = history.set(profile.id, seconds)
+        self.status.set(
+            f"{profile.title}: {format_reading_time(entry.seconds) or 'nothing'} in total"
+        )
+
+    def rename_selected(self) -> None:
+        """Change what the presence calls this game, and nothing else.
+
+        For releases VNDB has no entry of its own for - a fan translation, a
+        remake, a cut like STEINS;GATE Re:Boot - where the parent entry is the
+        right source of cover art but the wrong name.
+        """
+        profile = self.selected_profile()
+        if profile is None:
+            messagebox.showinfo("VNPresence", "Pick a game first.")
+            return
+        typed = simpledialog.askstring(
+            "Rename",
+            "What should the presence call this game?",
+            initialvalue=profile.title,
+            parent=self,
+        )
+        if not typed or not typed.strip():
+            return
+        profile.title = typed.strip()
+        self.library.save(profile)
+        self.refresh()
+        self.status.set(f"Now called {profile.title}")
 
     def apply_note(self) -> None:
         """Save what is typed in the route box for the selected game."""

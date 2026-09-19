@@ -13,7 +13,7 @@ game's YAML profile with no code.
 | Class | Called when | Use it for |
 |---|---|---|
 | `MetadataProvider` | Once, before launch | Where title/cover/description come from |
-| `StateProvider` | Every update (15s) | Chapter, route, progress, anything live |
+| `StateProvider` | Every update (15s) | Chapter, route, play time, anything live |
 | `PresenceFormatter` | Every update | A different presence layout |
 
 ## Skeleton
@@ -92,15 +92,14 @@ plugin_options:
    flickering an empty line.
 4. **Respect privacy.** A `StateProvider` runs even in `private` mode, but
    nothing it returns is published there - not the status text, not the
-   progress. A route name identifies a novel as surely as its title does, which
+   reading total. A route name identifies a novel as surely as its title does, which
    is the one thing private mode exists to withhold.
 5. **Text limits.** Discord clips fields at 128 characters; VNPresence clamps for
    you, so long strings are truncated, not rejected.
-6. **`progress` overrules the estimate.** VNPresence works out a rough
-   percentage from reading time against VNDB's average. Set
-   `PresenceState.progress` (0.0-1.0) and yours is used instead - if you can
-   read a save file or count chapters, you know better than the clock does.
-   Leave it `None` to keep the estimate.
+6. **`playtime_seconds` overrules the recorded total.** VNPresence adds up the
+   time it has watched a game being read. If your plugin can get the real
+   figure out of the game, set `PresenceState.playtime_seconds` and yours is
+   shown instead. Leave it `None` to keep the recorded one.
 
 ## A metadata provider
 

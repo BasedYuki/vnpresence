@@ -16,7 +16,6 @@ import requests
 
 from .config import cache_dir
 from .models import GameMetadata, normalise_vndb_id
-from .playtime import BUCKET_MINUTES
 
 log = logging.getLogger(__name__)
 
@@ -25,14 +24,13 @@ USER_AGENT = "VNPresence (+https://github.com/BasedYuki/vnpresence)"
 
 FIELDS = (
     "id, title, alttitle, image.url, image.sexual, image.violence, "
-    "description, released, languages, platforms, length, length_minutes, "
-    "length_votes, rating, "
+    "description, released, languages, platforms, length, rating, votecount, "
     "tags.name, tags.category, tags.rating, tags.spoiler"
 )
 
 #: Bumped whenever the shape of a cached entry changes, so an old cache is
-#: refetched instead of silently missing the new fields.
-CACHE_SCHEMA = 2
+#: refetched instead of silently missing or carrying stale fields.
+CACHE_SCHEMA = 4
 
 LENGTH_LABELS = {
     1: "Very short (< 2h)",
@@ -85,7 +83,7 @@ class VNDBClient:
                 "results": limit,
             }
         )
-        return [parse_vn(item) for item in results]
+        return rank(term, [parse_vn(item) for item in results])
 
     # -- internals --------------------------------------------------------
     def _query(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -135,20 +133,34 @@ class VNDBClient:
             log.debug("could not write VNDB cache for %s", vndb_id, exc_info=True)
 
 
+def rank(term: str, results: list[GameMetadata]) -> list[GameMetadata]:
+    """Put the entry people actually mean first.
+
+    VNDB's own search rank is not enough on its own. Searching "rewrite"
+    returns a 2009 doujin called "rewrite" with two votes *above* the 2011
+    Rewrite with eight thousand, and taking the top hit lands the wrong cover
+    and the wrong length on the card - which is exactly what happened.
+
+    So among results whose title is exactly what was typed, the better-known
+    one wins. Everything else keeps VNDB's order, because when nothing matches
+    exactly its relevance ranking is the best signal there is.
+    """
+    typed = " ".join(term.split()).casefold()
+
+    def key(item: GameMetadata) -> tuple[int, int]:
+        exact = (item.title or "").casefold() == typed or (
+            (item.alt_title or "").casefold() == typed
+        )
+        return (1 if exact else 0, item.votes if exact else 0)
+
+    return sorted(results, key=key, reverse=True)
+
+
 def parse_vn(item: dict[str, Any]) -> GameMetadata:
     """Map a VNDB ``vn`` object onto :class:`GameMetadata`."""
     image = item.get("image") or {}
     length = item.get("length")
     rating = item.get("rating")
-    votes = item.get("length_votes")
-    votes = int(votes) if isinstance(votes, (int, float)) else 0
-    minutes = item.get("length_minutes")
-    minutes = int(minutes) if isinstance(minutes, (int, float)) and minutes > 0 else None
-    if minutes is None and isinstance(length, int):
-        # Nobody reported a play time: fall back to the middle of the bucket,
-        # and leave length_votes at 0 so the guess is recognisable as one.
-        minutes = BUCKET_MINUTES.get(length)
-        votes = 0
     return GameMetadata(
         title=item.get("title") or item.get("alttitle") or "Unknown",
         alt_title=item.get("alttitle"),
@@ -158,9 +170,8 @@ def parse_vn(item: dict[str, Any]) -> GameMetadata:
         languages=list(item.get("languages") or []),
         platforms=list(item.get("platforms") or []),
         length=LENGTH_LABELS.get(length) if isinstance(length, int) else None,
-        length_minutes=minutes,
-        length_votes=votes,
         rating=round(rating / 10, 1) if isinstance(rating, (int, float)) else None,
+        votes=int(item.get("votecount") or 0),
         nsfw=is_nsfw(item),
         url=f"https://vndb.org/{item.get('id')}" if item.get("id") else None,
         source="vndb",

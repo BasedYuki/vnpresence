@@ -166,12 +166,12 @@ def test_add_game_names_the_game_after_its_folder(app, monkeypatch):
     monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **k: chosen)
     searched = []
 
-    def fake_lookup(term):
+    def no_match(term):
         searched.append(term)
-        return None, None  # VNDB offline / no match
+        return [], None  # VNDB answered, nothing is called that
 
     monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: None)
-    app._lookup = fake_lookup
+    app._candidates = no_match
     app.config_data = gui.AppConfig(client_id="1")
     app.refresh = lambda: None
     app.add_game()
@@ -186,7 +186,7 @@ def test_add_game_accepts_a_typed_name_when_vndb_finds_nothing(app, monkeypatch)
         gui.filedialog, "askopenfilename", lambda **k: r"D:\VN\folder\game.exe"
     )
     monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "Clannad")
-    app._lookup = lambda term: (None, None)
+    app._candidates = lambda term: ([], None)
     app.config_data = gui.AppConfig(client_id="1")
     app.refresh = lambda: None
     app.add_game()
@@ -232,7 +232,7 @@ def test_changing_the_default_privacy_is_saved(app, tmp_path, monkeypatch):
 def test_added_games_use_the_configured_default(app, monkeypatch):
     monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **k: r"D:\VN\Clannad\game.exe")
     monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: None)
-    app._lookup = lambda term: (None, None)
+    app._candidates = lambda term: ([], None)
     app.config_data = gui.AppConfig(client_id="1", default_privacy="auto")
     app.refresh = lambda: None
     app.add_game()
@@ -317,11 +317,104 @@ def test_relinking_repoints_an_already_added_game(app, monkeypatch):
     app.refresh = lambda: None
     app.selected_profile = lambda: app.library.get("x")
     monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "https://vndb.org/v2400")
-    app._lookup = lambda term: (gui_metadata(), "v2400")
+    app._candidates = lambda term: ([gui_metadata()], None)
     app.relink_selected()
     saved = app.library.get("x")
     assert saved.vndb_id == "v2400"
-    assert saved.title == "Rewrite+"
+    assert saved.title == "Rewrite+"  # askyesno is stubbed to yes
+
+
+def test_relinking_can_keep_a_name_the_reader_chose(app, monkeypatch):
+    """STEINS;GATE Re:Boot borrows its parent's cover, not its parent's name."""
+    profile = app.library.get("x")
+    profile.title = "STEINS;GATE Re:Boot"
+    app.library.save(profile)
+    app.config_data = gui.AppConfig(client_id="1")
+    app.refresh = lambda: None
+    app.selected_profile = lambda: app.library.get("x")
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "v2002")
+
+    answers = iter([True, False])  # yes that is the game, no do not rename it
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **k: next(answers))
+    from vnpresence.models import GameMetadata
+
+    app._candidates = lambda term: (
+        [GameMetadata(title="STEINS;GATE", url="https://vndb.org/v2002", source="vndb")],
+        None,
+    )
+    app.relink_selected()
+    saved = app.library.get("x")
+    assert saved.vndb_id == "v2002"      # the cover comes from the parent entry
+    assert saved.title == "STEINS;GATE Re:Boot"   # the name stays the reader's
+
+
+def test_renaming_touches_nothing_else(app, monkeypatch):
+    profile = app.library.get("x")
+    profile.vndb_id = "v2002"
+    app.library.save(profile)
+    app.refresh = lambda: None
+    app.selected_profile = lambda: app.library.get("x")
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "  STEINS;GATE Re:Boot  ")
+    app.rename_selected()
+    saved = app.library.get("x")
+    assert saved.title == "STEINS;GATE Re:Boot"
+    assert saved.vndb_id == "v2002"
+
+
+def test_a_cancelled_rename_changes_nothing(app, monkeypatch):
+    app.refresh = lambda: None
+    app.selected_profile = lambda: app.library.get("x")
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "   ")
+    app.rename_selected()
+    assert app.library.get("x").title == "X"
+
+
+def test_the_runners_up_are_offered_when_the_first_guess_is_wrong(app, monkeypatch):
+    """A side story sits next to its parent; before, there was no way to pick it."""
+    from vnpresence.models import GameMetadata
+
+    shown = {}
+
+    def fake_prompt(title, prompt, **kwargs):
+        shown["prompt"] = prompt
+        return "3"  # the third result
+
+    monkeypatch.setattr(gui.simpledialog, "askstring", fake_prompt)
+    candidates = [
+        GameMetadata(title="Tsukihime", url="https://vndb.org/v7", source="vndb"),
+        GameMetadata(title="Tsukihime Hit", url="https://vndb.org/v49584", source="vndb"),
+        GameMetadata(title="Tsukihime PLUS-DISC", url="https://vndb.org/v49", source="vndb"),
+    ]
+    picked, typed = app._ask_for_another("Tsukihime", candidates)
+    assert picked.title == "Tsukihime PLUS-DISC"
+    assert "2. Tsukihime Hit" in shown["prompt"]
+    assert "3. Tsukihime PLUS-DISC" in shown["prompt"]
+    assert typed == ""
+
+
+def test_a_number_nobody_offered_is_not_a_match(app, monkeypatch):
+    from vnpresence.models import GameMetadata
+
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "9")
+    one = [GameMetadata(title="Tsukihime", url="https://vndb.org/v7", source="vndb")]
+    picked, _ = app._ask_for_another("Tsukihime", one)
+    assert picked is None
+
+
+def test_a_game_added_without_a_match_says_so(app, monkeypatch):
+    """The windowed .exe has no console, so silence left people guessing."""
+    told = []
+    monkeypatch.setattr(gui.messagebox, "showinfo", lambda title, text: told.append(text))
+    monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **k: r"D:\VN\Unknown\g.exe")
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: None)
+    app._candidates = lambda term: ([], "VNDB could not be reached: timeout\n\n")
+    app.config_data = gui.AppConfig(client_id="1")
+    app.refresh = lambda: None
+    app.add_game()
+    assert told, "the reader must be told the game has no cover"
+    assert "no cover" in told[0]
+    assert "could not be reached" in told[0]   # and why
+    assert "VNDB link" in told[0]              # and how to fix it
 
 
 def test_a_bad_link_changes_nothing(app, monkeypatch):
@@ -329,7 +422,7 @@ def test_a_bad_link_changes_nothing(app, monkeypatch):
     app.refresh = lambda: None
     app.selected_profile = lambda: app.library.get("x")
     monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "https://vndb.org/v999999")
-    app._lookup = lambda term: (None, None)
+    app._candidates = lambda term: ([], None)
     app.relink_selected()
     saved = app.library.get("x")
     assert saved.vndb_id is None
@@ -340,3 +433,24 @@ def gui_metadata():
     from vnpresence.models import GameMetadata
 
     return GameMetadata(title="Rewrite+", url="https://vndb.org/v2400", source="vndb")
+
+
+def test_the_time_read_button_seeds_a_long_running_game(app, monkeypatch):
+    """Fifty hours read before VNPresence existed cannot be imported, only told."""
+    from vnpresence.playtime import Playtime
+
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "50h 30m")
+    app.selected_profile = lambda: app.library.get("x")
+    app.set_playtime()
+    assert Playtime().total("x") == 50.5 * 3600
+    assert "50h 30m read" in app.status.get()
+
+
+def test_a_nonsense_time_changes_nothing(app, monkeypatch):
+    from vnpresence.playtime import Playtime
+
+    Playtime().set("x", 3600)
+    monkeypatch.setattr(gui.simpledialog, "askstring", lambda *a, **k: "a while")
+    app.selected_profile = lambda: app.library.get("x")
+    app.set_playtime()
+    assert Playtime().total("x") == 3600

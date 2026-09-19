@@ -217,4 +217,11 @@ def _find_candidate(profile: GameProfile, descendants: set[int]) -> psutil.Proce
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 
-    return by_name or by_descendant or by_exe_name or by_path or by_folder
+    # Order matters. `process_names` is what someone typed on purpose, and a
+    # descendant of the process we started is ours by construction. After that
+    # the full path identifies a game exactly, while a bare file name does not:
+    # every Science Adventure release ships a launcher with the same name, so
+    # name-matching alone happily returns a different novel's launcher. The
+    # name is still worth trying last, because an elevated process hides its
+    # path from us and the name is then all there is.
+    return by_name or by_descendant or by_path or by_exe_name or by_folder
