@@ -82,12 +82,16 @@ committed on purpose. Only change it if the project's application is replaced.
 
 ### The icon
 
-`assets/icon.png` is generated, not hand-drawn - edit `tools/make_icon.py` and
-re-run it rather than editing the PNG:
+`assets/icon.png` and `assets/icon-256.png` are generated - edit
+`tools/make_icon.py` and re-run it rather than editing the PNGs:
 
 ```bash
 python tools/make_icon.py
 ```
+
+`assets/icon.ico` is different: it is the Windows executable's icon, kept by
+hand, and the script never writes to it. If you want a generated one, pass
+`--ico` and it lands as `icon-generated.ico` instead.
 
 ### Commit messages
 

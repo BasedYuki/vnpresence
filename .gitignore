@@ -12,3 +12,4 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+assets/icon-generated.ico

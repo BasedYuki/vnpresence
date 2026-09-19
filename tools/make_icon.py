@@ -1,7 +1,13 @@
-"""Draw the VNPresence icon.
+"""Draw the fallback VNPresence artwork.
 
 Run with:  python tools/make_icon.py
 Writes assets/icon.png (1024x1024) and assets/icon-256.png.
+
+It deliberately does **not** touch assets/icon.ico. That file is the Windows
+executable's icon and is maintained by hand; regenerating it here would quietly
+overwrite whatever the project is actually shipping. Pass --ico if you really
+want a generated .ico, and it is written next to the others as
+icon-generated.ico so nothing is clobbered.
 
 The motif is a visual novel's dialogue box: a rounded frame, two lines of
 "text", and the little advance marker in the corner. It has to stay readable at
@@ -10,6 +16,7 @@ The motif is a visual novel's dialogue box: a rounded frame, two lines of
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -52,17 +59,25 @@ def build() -> Image.Image:
     return image
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
     OUT.mkdir(exist_ok=True)
     icon = build()
     icon.save(OUT / "icon.png")
     icon.resize((256, 256), Image.LANCZOS).save(OUT / "icon-256.png")
-    # .ico for the Windows executable itself (PyInstaller --icon)
-    icon.save(
-        OUT / "icon.ico",
-        sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
-    )
-    print(f"wrote icon.png, icon-256.png and icon.ico in {OUT}")
+    written = ["icon.png", "icon-256.png"]
+
+    if "--ico" in argv:
+        # Never "icon.ico": that one belongs to whoever set the app's icon.
+        icon.save(
+            OUT / "icon-generated.ico",
+            sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+        )
+        written.append("icon-generated.ico")
+
+    print(f"wrote {', '.join(written)} in {OUT}")
+    if "--ico" not in argv:
+        print("assets/icon.ico was left alone (it is the app icon; use --ico for a generated one)")
 
 
 if __name__ == "__main__":
