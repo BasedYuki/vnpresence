@@ -56,6 +56,16 @@ class GameProfile:
     # Process tracking
     process_names: list[str] = field(default_factory=list)
     launcher_grace: float = 12.0  # seconds to wait for a relaunched process
+    #: For a game inside an emulator: text that must appear in the emulator's
+    #: window title for this game to be the one running. A disc serial is the
+    #: best thing to put here. Without it, one emulator would answer for every
+    #: game in your library.
+    window_match: str | None = None
+    #: A regular expression applied to the game's own window title. The first
+    #: capture group (or the whole match) becomes the status line, so a game
+    #: that writes its chapter in the title bar reports it with no plugin:
+    #: ``chapter_pattern: "Chapter \\d+"``.
+    chapter_pattern: str | None = None
 
     # Presence
     privacy: PrivacyMode = PrivacyMode.AUTO

@@ -264,3 +264,50 @@ def test_an_unknown_theme_is_refused_rather_than_silently_ignored(library):
     assert result.exit_code != 0
     assert "no theme called" in result.output
     assert AppConfig.load().theme == "midnight"
+
+
+# -- emulated games --------------------------------------------------------
+def test_window_sets_and_shows_the_match(library):
+    assert run("window", "rewrite", "BLJM60123").exit_code == 0
+    assert Library().get("rewrite").window_match == "BLJM60123"
+    assert "BLJM60123" in run("window", "rewrite").output
+
+
+def test_window_clear_removes_it(library):
+    run("window", "rewrite", "BLJM60123")
+    run("window", "rewrite", "--clear")
+    assert Library().get("rewrite").window_match is None
+
+
+def test_emulators_says_so_when_none_is_running(library, monkeypatch):
+    monkeypatch.setattr("vnpresence.cli.running_emulators", lambda: [])
+    output = run("emulators").output
+    assert "No emulator is running" in output
+    assert "RPCS3" in output  # and what it knows about
+
+
+def test_emulators_prints_the_match_to_copy(library, monkeypatch):
+    from vnpresence.emulators import Running
+
+    monkeypatch.setattr(
+        "vnpresence.cli.running_emulators",
+        lambda: [Running(
+            pid=700, process="rpcs3.exe", emulator="RPCS3 (PlayStation 3)",
+            title="FPS: 59.94 | Vulkan | 0.0.42 Alpha | Muv-Luv Alternative [BLJM60123]",
+        )],
+    )
+    output = run("emulators").output
+    assert "Muv-Luv Alternative" in output
+    assert "BLJM60123" in output
+    assert "--window BLJM60123" in output  # the command, ready to paste
+
+
+def test_emulators_marks_one_with_nothing_loaded(library, monkeypatch):
+    from vnpresence.emulators import Running
+
+    monkeypatch.setattr(
+        "vnpresence.cli.running_emulators",
+        lambda: [Running(pid=1, process="ppsspp.exe", emulator="PPSSPP (PSP)",
+                         title="PPSSPP v1.17.1")],
+    )
+    assert "nothing loaded" in run("emulators").output

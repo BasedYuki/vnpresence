@@ -100,6 +100,10 @@ class AppConfig:
     watch_interval: float = 5.0
     #: Treat 18+ titles as private when a game's privacy is "auto".
     nsfw_auto_private: bool = True
+    #: Count reading time only while the game is the window in front, the way
+    #: a time tracker does. Alt-tab to a browser and the total stops. Windows
+    #: only: everywhere else there is no way to ask, so time keeps counting.
+    focused_time_only: bool = True
     #: Window colours: "midnight", "daylight" or "kingdom-hearts".
     theme: str = "midnight"
     #: Ask GitHub once a day whether a newer VNPresence has been released.

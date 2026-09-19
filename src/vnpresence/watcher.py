@@ -21,11 +21,13 @@ import psutil
 
 from .config import AppConfig
 from .daemon import clear_record, write_record
+from .emulators import matches_window
 from .launcher import _split_path
 from .library import Library
 from .models import GameProfile, PrivacyMode
 from .plugins import PluginRegistry, build_registry
 from .session import GameSession
+from .titlebar import titles_by_pid
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +76,11 @@ class LibraryWatcher:
         A name shared by two profiles is therefore ignored for both: it cannot
         identify either of them. Explicit ``process_names`` are kept whatever
         happens, because someone typed those on purpose.
+
+        An emulated game goes one step further: the process is the emulator,
+        which is the same executable for its whole library, so the match only
+        counts when the emulator's window title also carries that game's
+        ``window_match``.
         """
         profiles = self.watchable() if profiles is None else profiles
         if not profiles:
@@ -96,16 +103,32 @@ class LibraryWatcher:
             name: owners[0] for name, owners in exe_name_owners.items() if len(owners) == 1
         }
 
+        # Only ask the window manager anything if an emulated game is in the
+        # library at all - it is a whole extra enumeration otherwise.
+        emulated = [p for p in profiles if p.window_match]
+        windows = titles_by_pid() if emulated else {}
+
         for process in psutil.process_iter(["pid", "name", "exe"]):
             try:
                 info = process.info
+                pid = info["pid"]
                 name = (info.get("name") or "").lower()
                 exe = (info.get("exe") or "").replace("/", "\\").lower()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+
+            titles = windows.get(pid, [])
+            loaded = next(
+                (p for p in emulated if matches_window(p.window_match or "", titles)), None
+            )
+            if loaded is not None:
+                return Match(loaded, pid, name)
+
             profile = by_path.get(exe) or by_declared_name.get(name) or by_exe_name.get(name)
-            if profile is not None:
-                return Match(profile, info["pid"], name)
+            # A profile that names a window is only ever matched by that window,
+            # or every game in the emulator would answer to the emulator.
+            if profile is not None and not profile.window_match:
+                return Match(profile, pid, name)
         return None
 
     # -- loop -------------------------------------------------------------

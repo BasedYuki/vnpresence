@@ -14,9 +14,10 @@ and a link to its VNDB page - the way a normal game does.
 - Auto-detect mode picks up games you start from Steam or a shortcut
 - Adding a game is one line of YAML - or two clicks in the window
 - Type the route or chapter you are on and it shows up straight away
-- Your total reading time, counted across every session, on the card itself
+- Your total reading time, counted only while the game is actually in front
 - Per-game privacy, with a one-switch option to hide 18+ titles
 - A plugin API for anything the defaults do not cover
+- Works with emulated visual novels too - PSP, PS2, PS3, Vita, Switch
 - Three themes, including a deep-blue-and-gold one for the Kingdom Hearts fans
 - Updates itself: it tells you when a new build is out and installs it
 - MIT licensed, no telemetry, nothing phoning home except VNDB
@@ -102,6 +103,8 @@ vnpresence link rewrite https://vndb.org/v7738   # fix a wrong VNDB match
 vnpresence rematch --all                    # retry games that have no cover
 vnpresence rename sg "STEINS;GATE Re:Boot"  # what the presence calls it
 vnpresence search "muv luv"                 # look up VNDB ids
+vnpresence emulators                        # which emulator is running what
+vnpresence window muv-luv BLJM60123         # which title bar means this game
 vnpresence theme kingdom-hearts             # change the window's colours
 vnpresence update                           # is there a newer build? install it
 vnpresence doctor                           # check Discord, VNDB, config, paths
@@ -277,6 +280,60 @@ vnpresence rename sg "STEINS;GATE Re:Boot"
 The window has **Rename…** for this, and asks before replacing a name of yours
 with VNDB's.
 
+### Games inside an emulator
+
+Plenty of visual novels never left the PSP, the PS2, the PS3 or the Vita.
+VNPresence handles those, with one extra step: the process running is the
+**emulator**, and one emulator runs your whole library, so it has to be told
+which game is loaded.
+
+Every emulator puts that in its title bar, usually with the disc serial:
+
+```
+RPCS3     FPS: 59.94 | Vulkan | 0.0.42 Alpha | Muv-Luv Alternative [BLJM60123]
+PPSSPP    ULJM05800 : Steins;Gate
+PCSX2     Clannad
+Ryujinx   Ryujinx 1.1.1 - Steins;Gate Elite v1.0.0 (01001B300B9BE000)
+```
+
+So: start the game in the emulator, then ask what it sees.
+
+```bash
+vnpresence emulators
+# RPCS3 (PlayStation 3)  (pid 8124)
+#   title : FPS: 59.94 | Vulkan | 0.0.42 Alpha | Muv-Luv Alternative [BLJM60123]
+#   game  : Muv-Luv Alternative
+#   match : BLJM60123
+#
+#   vnpresence add "<path to the emulator>" --window BLJM60123 \
+#       --search "Muv-Luv Alternative"
+```
+
+Add it with that line, and it works like any other game - cover art, reading
+time, routes, auto-detect. In the window, pick the emulator's `.exe` under
+**Add game…** and VNPresence asks which game it is, with the answer already
+filled in when it can see one running.
+
+To fix or add the match later:
+
+```bash
+vnpresence window muv-luv BLJM60123
+vnpresence window muv-luv --clear
+```
+
+**Use the serial where there is one.** It is exact, and it survives a
+translation patch renaming the game or the emulator rewording its title bar. A
+distinctive part of the name works too.
+
+Known emulators: RPCS3, PPSSPP, PCSX2, Vita3K, Ryujinx, yuzu, Citra, Lime3DS,
+Azahar, melonDS, DeSmuME, DuckStation, mGBA, VisualBoyAdvance-M, Snes9x,
+RetroArch, xemu, Flycast, redream. Anything else works too - it just will not
+be recognised as an emulator when you add it, so set `window_match` yourself.
+
+**Windows only.** Reading another program's window title needs the Windows API;
+on Linux and macOS an emulated game is matched by process name like anything
+else, which cannot tell two games in one emulator apart.
+
 ### The profile file
 
 Each game is one small YAML file in the games folder. Adding support for a new
@@ -303,6 +360,8 @@ Every key it accepts:
 | `description` | from VNDB | Overrides the VNDB description |
 | `process_names` | `[]` | The **real** process name if a launcher starts the game |
 | `launcher_grace` | `12` | Seconds to wait for that real process to appear |
+| `window_match` | - | For an emulated game: text from the emulator's title bar (a disc serial is best) |
+| `chapter_pattern` | - | A regex matched against the game's own title bar; what it finds becomes the status line ([chapters](docs/chapters.md)) |
 | `privacy` | `auto` if the key is missing; games added through VNPresence get `full` | `auto` / `full` / `private` / `off` - see [Privacy](#8-privacy) |
 | `status_text` | `Reading` | The second presence line |
 | `show_buttons` | global | Show the "View on VNDB" button |
@@ -459,6 +518,12 @@ In the window, the **Route / chapter** box does the same thing. Either way a
 running session picks the change up within one update - about fifteen seconds -
 so you can set it as you go without restarting anything.
 
+Some games write the chapter in their own title bar, and those need no typing at
+all - one `chapter_pattern` line in the profile reads it out. A Ren'Py game can
+report its labels directly with a dozen-line drop-in mod.
+**[docs/chapters.md](docs/chapters.md)** covers all four ways, and is honest
+about the two VNPresence will not do.
+
 ```
 Playing Rewrite+
 ┌────────┐  Rewrite+
@@ -483,6 +548,14 @@ Very long (> 50h) • 2011 • 12h 40m read
 vnpresence stats
 # Rewrite+     12h 40m  7 sessions  last 2026-09-19
 ```
+
+**Only while you are reading.** Time counts when the game is the window in
+front, the way a time tracker does - alt-tab to a browser for twenty minutes and
+the total does not move. The elapsed timer Discord shows keeps running, because
+every game on Discord counts wall clock and a timer that jumped backwards would
+look broken; it is the recorded total that pauses. Turn it off with
+`focused_time_only: false`. (Windows only: elsewhere there is no way to ask
+which window is in front, so time simply keeps counting.)
 
 **Already read it for fifty hours?** Nothing can import that. No visual novel
 engine exposes its play time in a portable way - the few that record it keep it
@@ -588,6 +661,7 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | Presence disappears a second after launch | The game uses a launcher - set `process_names` (see [section 4](#4-adding-visual-novels)) |
 | Title is the engine's name (`SiglusEngine`, `reallive`) | An old profile from before 0.5.0 - fix the title and `vndb_id` in its YAML, or remove and add the game again |
 | Title shows but no cover art | No `vndb_id` on the profile, or VNDB was unreachable when it was added - run `vnpresence add --vndb v2002 ...` again or set `image_url` |
+| Every game in my emulator shows up as the same novel | Each one needs its own `window_match` - `vnpresence emulators` prints it. Without one, the emulator answers for its whole library |
 | Every game in a series shows up as the same novel | Fixed in 0.11.0 - they share a launcher and were matched by name. Update, or point each profile at the game's own .exe |
 | A game shows no cover art | It has no VNDB match. `vnpresence rematch --all`, or **VNDB link…** in the window |
 | A fan translation or remake shows the original's name | VNDB has no separate entry for it. Keep the cover, change the name: `vnpresence rename <game> "..."` |

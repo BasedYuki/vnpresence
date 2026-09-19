@@ -24,6 +24,9 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from . import __version__, startup, theme, update
 from .config import AppConfig
 from .daemon import running_pid, spawn_background, stop_background
+from .emulators import is_emulator
+from .emulators import label as emulator_label
+from .emulators import running as running_emulators
 from .launcher import LaunchError
 from .library import Library
 from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
@@ -351,8 +354,17 @@ class App(tk.Tk):
         )
         if not path:
             return
+        # An emulator is not a game: it runs a whole library, and only its
+        # window title says which one. Ask before anything else, because the
+        # answer changes what we search VNDB for.
+        window_match = self._ask_emulator(path)
+        if window_match is False:  # they cancelled
+            return
+
         # The .exe is usually named after the engine, the folder after the game.
         guess = guess_title(path)
+        if isinstance(window_match, str) and window_match:
+            guess = self._emulator_guess or guess
         candidates, problem = self._candidates(guess)
         metadata = candidates[0] if candidates else None
 
@@ -374,6 +386,7 @@ class App(tk.Tk):
             title=title,
             path=path,
             vndb_id=vndb_id,
+            window_match=window_match or None,
             privacy=PrivacyMode(self.config_data.default_privacy),
         )
         self.library.save(profile)
@@ -402,6 +415,40 @@ class App(tk.Tk):
                 "executable instead of the launcher.",
             )
         self.status.set(f"Added {title}")
+
+    def _ask_emulator(self, path: str):
+        """For an emulator, work out which game is loaded. False = cancelled.
+
+        The reader is asked once, with the answer already filled in from the
+        title bar when the game is open - which is the easy case, and the one
+        worth making one keypress long.
+        """
+        self._emulator_guess = ""
+        if not is_emulator(path):
+            return ""
+        name = emulator_label(path) or "an emulator"
+
+        suggestion, loaded_name = "", ""
+        for item in running_emulators():
+            if item.loaded and item.process.lower() in path.lower():
+                suggestion, loaded_name = item.match, item.game
+                break
+
+        typed = simpledialog.askstring(
+            "Emulated game",
+            f"{name} runs every game you own, so VNPresence needs to know which "
+            f"one this is.\n\n"
+            "Type a disc serial or a distinctive part of the name as it appears "
+            "in the emulator's title bar"
+            + (f"\n\n(it is running {loaded_name} now)" if loaded_name else "")
+            + ":",
+            initialvalue=suggestion,
+            parent=self,
+        )
+        if typed is None:
+            return False
+        self._emulator_guess = loaded_name
+        return typed.strip()
 
     def _candidates(self, term: str):
         """VNDB matches for a name or a link, and why there are none if so.

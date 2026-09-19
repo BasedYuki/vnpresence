@@ -10,6 +10,10 @@ import click
 
 from . import __version__
 from .config import AppConfig, config_dir, config_file, games_dir
+from .emulators import EMULATORS as EMULATOR_LABELS
+from .emulators import is_emulator
+from .emulators import label as emulator_label
+from .emulators import running as running_emulators
 from .launcher import LaunchError, _split_path
 from .library import Library
 from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
@@ -51,6 +55,11 @@ def main(verbose: bool) -> None:
     help="Privacy mode for this game (default: auto).",
 )
 @click.option("--process", "process_names", multiple=True, help="Real process name(s), repeatable.")
+@click.option(
+    "--window",
+    "window_match",
+    help="For an emulated game: text (ideally the disc serial) from the emulator's title bar.",
+)
 @click.option("--arg", "args", multiple=True, help="Argument passed to the executable, repeatable.")
 def add_game(
     path: Path,
@@ -59,9 +68,15 @@ def add_game(
     search_term: str | None,
     privacy: str | None,
     process_names: tuple[str, ...],
+    window_match: str | None,
     args: tuple[str, ...],
 ) -> None:
-    """Add a game by pointing at its executable."""
+    """Add a game by pointing at its executable.
+
+    For a game inside an emulator, point at the emulator and say which game:
+
+        vnpresence add "C:\\rpcs3\\rpcs3.exe" --window BLJM60123 --search "Muv-Luv"
+    """
     config = AppConfig.load()
     library = Library()
     metadata = None
@@ -90,10 +105,12 @@ def add_game(
         args=list(args),
         vndb_id=vndb_id,
         process_names=list(process_names),
+        window_match=window_match or None,
         privacy=PrivacyMode(privacy or config.default_privacy),
     )
     saved = library.save(profile)
     click.secho(f"\u2713 added {profile.title}", fg="green")
+    _warn_about_emulator(profile)
     _warn_about_shared_launcher(library, profile)
     click.echo(f"  id      : {profile.id}")
     click.echo(f"  vndb    : {profile.vndb_id or '-'}")
@@ -473,6 +490,54 @@ def plugins_command() -> None:
         click.echo(f"{key}: {', '.join(values) or '-'}")
 
 
+@main.command("emulators")
+def emulators_command() -> None:
+    """Show the emulators running right now and what they have loaded.
+
+    Emulated games are identified by the emulator's window title, and this is
+    where to read it off: start the game, run this, copy the match.
+    """
+    found = running_emulators()
+    if not found:
+        click.echo("No emulator is running. Start one, load the game, and try again.")
+        click.echo(f"\nKnown emulators: {', '.join(sorted(set(EMULATOR_LABELS.values())))}")
+        return
+    for item in found:
+        click.secho(f"{item.emulator}  (pid {item.pid})", fg="cyan")
+        click.echo(f"  title : {item.title or '(no window title)'}")
+        if not item.loaded:
+            click.secho("  nothing loaded yet", fg="yellow")
+            continue
+        click.echo(f"  game  : {item.game or '-'}")
+        click.echo(f"  match : {item.match}")
+        click.echo(f'\n  vnpresence add "<path to the emulator>" --window {item.match} \\')
+        click.echo(f'      --search "{item.game or item.match}"')
+
+
+@main.command("window")
+@click.argument("game")
+@click.argument("text", nargs=-1)
+@click.option("--clear", "clear", is_flag=True, help="Stop matching on the window title.")
+def window(game: str, text: tuple[str, ...], clear: bool) -> None:
+    """Set which emulator window title means this game is running."""
+    library = Library()
+    profile = library.find(game)
+    if profile is None:
+        raise click.ClickException(f"no game matches {game!r} (try: vnpresence list)")
+    if clear:
+        profile.window_match = None
+        library.save(profile)
+        click.secho(f"\u2713 {profile.title} no longer matches on a window title", fg="green")
+        return
+    if not text:
+        click.echo(profile.window_match or f"{profile.title} has no window match.")
+        return
+    profile.window_match = " ".join(text).strip()
+    library.save(profile)
+    click.secho(f"\u2713 {profile.title} matches windows containing "
+                f"{profile.window_match!r}", fg="green")
+
+
 @main.command("theme")
 @click.argument("name", required=False)
 def theme_command(name: str | None) -> None:
@@ -595,6 +660,22 @@ def _vndb_check(config: AppConfig) -> None:
     except Exception as exc:
         click.secho(f"vndb       : not reachable ({exc})", fg="yellow")
 
+
+
+def _warn_about_emulator(profile: GameProfile) -> None:
+    """An emulator with no window match would answer for its whole library."""
+    if profile.window_match or not is_emulator(profile.path):
+        return
+    name = emulator_label(profile.path) or "an emulator"
+    click.secho(
+        f"\n! {name} runs every game you own, so on its own it cannot say which "
+        "one you are reading.",
+        fg="yellow",
+    )
+    click.echo(
+        "  Start the game, then run:  vnpresence emulators\n"
+        f"  and set the match it prints:  vnpresence window {profile.id} <serial>"
+    )
 
 
 def _warn_about_shared_launcher(library: Library, profile: GameProfile) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -16,6 +17,7 @@ from .notes import read_note
 from .playtime import Playtime
 from .plugins import PluginRegistry, build_registry
 from .presence import DiscordPresence
+from .titlebar import foreground_pid, titles_for
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +33,8 @@ class SessionResult:
     metadata_source: str
     #: Everything ever read of this game, this session included.
     total_seconds: float = 0.0
+    #: Of this session, the part spent with the game actually in front.
+    read_seconds: float = 0.0
 
 
 class GameSession:
@@ -53,6 +57,12 @@ class GameSession:
         self.playtime = playtime or Playtime()
         self.metadata: GameMetadata | None = None
         self.start_time = 0.0
+        #: Seconds of *this* session actually spent reading - the game in the
+        #: foreground, not the game sitting behind a browser. Time is added a
+        #: tick at a time by the loop rather than measured from the clock,
+        #: because the clock cannot know where the reader was looking.
+        self.read_seconds = 0.0
+        self._tracked_pid: int | None = None
         #: Seconds read before this session started: the total shown is about
         #: the novel, not about today.
         self.previous_seconds = 0.0
@@ -89,16 +99,42 @@ class GameSession:
         and may well be reused on the next poll.
         """
         note = read_note(self.profile.id)
+        chapter = self.chapter_from_title()
         total = state.playtime_seconds
         if total is None and self._playtime_enabled():
-            total = self.previous_seconds + self.elapsed()
+            total = self.previous_seconds + self.read_seconds
         return replace(
             state,
-            # The reader typed the note on purpose, so it outranks a plugin's
-            # guess at the same line.
-            status_text=note or state.status_text,
+            # In order of how much they know: what the reader typed, what the
+            # game itself says in its title bar, then whatever a plugin found.
+            status_text=note or chapter or state.status_text,
             playtime_seconds=total,
         )
+
+    def chapter_from_title(self) -> str | None:
+        """The chapter, if the game writes one into its own window title.
+
+        A minority of visual novels do - and for those this is the whole
+        feature, with no plugin, no memory reading and no save-file parsing.
+        The profile supplies the pattern because only someone looking at that
+        game's title bar knows what it says.
+        """
+        pattern = self.profile.chapter_pattern
+        if not pattern or self._tracked_pid is None:
+            return None
+        try:
+            compiled = re.compile(pattern, re.IGNORECASE)
+        except re.error:
+            log.warning("%s: chapter_pattern is not a valid regex", self.profile.id)
+            self.profile.chapter_pattern = None  # do not retry it every update
+            return None
+        for title in titles_for(self._tracked_pid):
+            found = compiled.search(title)
+            if found:
+                text = found.group(1) if found.groups() else found.group(0)
+                if text and text.strip():
+                    return " ".join(text.split())
+        return None
 
     def _playtime_enabled(self) -> bool:
         if self.profile.show_playtime is not None:
@@ -106,11 +142,35 @@ class GameSession:
         return self.config.show_playtime
 
     def elapsed(self) -> float:
+        """Wall-clock seconds since the game started.
+
+        This is what Discord's timer shows, and it keeps running while you are
+        elsewhere - every game on Discord behaves that way, and a timer that
+        jumped backwards would look broken. The *reading* total is the one that
+        pauses; see :meth:`is_focused`.
+        """
         return max(time.time() - self.start_time, 0.0) if self.start_time else 0.0
 
+    def is_focused(self) -> bool:
+        """Is the game the window being used right now?
+
+        Unknown counts as yes. On Linux, on macOS, or if the call fails, there
+        is no way to tell - and silently recording nobody's reading time would
+        be far worse than counting a few minutes spent in a browser.
+        """
+        if not self.config.focused_time_only or self._tracked_pid is None:
+            return True
+        active = foreground_pid()
+        return active is None or active == self._tracked_pid
+
+    def _tick(self, seconds: float) -> None:
+        """Add a slice of the loop's waiting to the reading total, if it counts."""
+        if seconds > 0 and self.is_focused():
+            self.read_seconds += seconds
+
     def _record_playtime(self, *, final: bool = False) -> None:
-        """Write this session's time so far into the history. Never raises."""
-        unrecorded = self.elapsed() - self._recorded
+        """Write this session's reading time into the history. Never raises."""
+        unrecorded = self.read_seconds - self._recorded
         if unrecorded <= 0 and not final:
             return
         try:
@@ -136,6 +196,7 @@ class GameSession:
 
         tracked = self._start_game(attach=attach)
         self.start_time = tracked.started_at
+        self._tracked_pid = tracked.pid
         self.previous_seconds = self.playtime.total(self.profile.id)
         notify("launch", f"tracking {tracked.name} (pid {tracked.pid})")
 
@@ -168,6 +229,9 @@ class GameSession:
         try:
             while not self._stop and tracked.is_running():
                 time.sleep(self.config.poll_interval)
+                # Count the slice that just passed, but only if it was spent
+                # in the game. Alt-tab away and the total stops moving.
+                self._tick(self.config.poll_interval)
                 if time.time() - last_record >= RECORD_EVERY:
                     # Save the time as we go. A crash, a power cut or a killed
                     # process then costs a minute of history, not the evening.
@@ -197,7 +261,7 @@ class GameSession:
             self.presence.close()
 
         seconds = max(time.time() - self.start_time, 0.0)
-        total = self.previous_seconds + seconds
+        total = self.previous_seconds + self.read_seconds
         notify("end", f"session ended after {format_duration(seconds)}")
         return SessionResult(
             title=self.profile.title,
@@ -205,6 +269,7 @@ class GameSession:
             privacy=privacy,
             metadata_source=(self.metadata or _empty()).source,
             total_seconds=total,
+            read_seconds=self.read_seconds,
         )
 
     def stop(self) -> None:

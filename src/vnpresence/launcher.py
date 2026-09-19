@@ -26,7 +26,9 @@ from pathlib import Path
 
 import psutil
 
+from .emulators import matches_window
 from .models import GameProfile
+from .titlebar import titles_for
 
 log = logging.getLogger(__name__)
 
@@ -189,6 +191,9 @@ def _watch_descendants(pid: int) -> set[int]:
 
 def _find_candidate(profile: GameProfile, descendants: set[int]) -> psutil.Process | None:
     wanted_names = {n.lower() for n in profile.process_names}
+    #: An emulated game is identified by what its emulator has loaded, not by
+    #: the emulator's own name or path - those are the same for every game.
+    wanted_window = profile.window_match
     exe_path = Path(profile.path).expanduser() if profile.path else None
     game_dir, exe_name = _split_path(profile.path or "")
 
@@ -216,6 +221,17 @@ def _find_candidate(profile: GameProfile, descendants: set[int]) -> psutil.Proce
                 by_descendant = process
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
+
+    if wanted_window:
+        # Everything found so far only says "the emulator is running". Which
+        # game it has loaded is in the window title, so nothing counts until
+        # that agrees - otherwise one emulator answers for a whole library.
+        for candidate in (by_name, by_exe_name, by_path, by_folder, by_descendant):
+            if candidate is None:
+                continue
+            if matches_window(wanted_window, titles_for(candidate.pid)):
+                return candidate
+        return None
 
     # Order matters. `process_names` is what someone typed on purpose, and a
     # descendant of the process we started is ours by construction. After that

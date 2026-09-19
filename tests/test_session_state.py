@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from vnpresence import notes
 from vnpresence.config import AppConfig
 from vnpresence.models import GameMetadata, GameProfile, PresenceState
@@ -33,8 +35,8 @@ def make_session(tmp_path, **profile_kwargs):
 def test_the_total_counts_previous_sessions_not_just_tonight(tmp_path):
     session = make_session(tmp_path)
     session.previous_seconds = 5 * 3600  # five hours on earlier evenings
-    total = session.live_state(PresenceState()).playtime_seconds
-    assert 5 * 3600 + 55 <= total <= 5 * 3600 + 70  # plus tonight's minute
+    session.read_seconds = 60  # and a minute tonight
+    assert session.live_state(PresenceState()).playtime_seconds == 5 * 3600 + 60
 
 
 def test_a_plugin_that_knows_better_is_not_overruled(tmp_path):
@@ -89,20 +91,77 @@ def test_the_plugin_state_object_is_left_alone(tmp_path):
     assert original.playtime_seconds is None
 
 
+# -- only while the game is the window in front ---------------------------
+def test_time_only_counts_while_the_game_is_in_front(tmp_path, monkeypatch):
+    """Alt-tab to a browser and the reading total stops, like a time tracker."""
+    session = make_session(tmp_path)
+    session._tracked_pid = 4242
+
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: 4242)
+    session._tick(2.0)
+    session._tick(2.0)
+    assert session.read_seconds == 4.0
+
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: 999)  # a browser
+    session._tick(2.0)
+    session._tick(2.0)
+    assert session.read_seconds == 4.0  # unchanged: nobody was reading
+
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: 4242)
+    session._tick(2.0)
+    assert session.read_seconds == 6.0
+
+
+def test_the_discord_timer_keeps_running_even_so(tmp_path, monkeypatch):
+    """Every game on Discord counts wall clock; a timer that jumped back looks broken."""
+    session = make_session(tmp_path)
+    session._tracked_pid = 4242
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: 999)
+    assert session.elapsed() >= 60  # start_time was a minute ago
+    assert session.read_seconds == 0.0
+
+
+def test_an_unknown_foreground_counts_as_reading(tmp_path, monkeypatch):
+    """On Linux there is no way to ask - recording nothing would be worse."""
+    session = make_session(tmp_path)
+    session._tracked_pid = 4242
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: None)
+    session._tick(5.0)
+    assert session.read_seconds == 5.0
+
+
+def test_the_whole_thing_can_be_switched_off(tmp_path, monkeypatch):
+    session = make_session(tmp_path)
+    session._tracked_pid = 4242
+    session.config.focused_time_only = False
+    monkeypatch.setattr(
+        "vnpresence.session.foreground_pid", lambda: pytest.fail("should not be asked")
+    )
+    session._tick(3.0)
+    assert session.read_seconds == 3.0
+
+
+def test_nothing_is_counted_before_a_game_is_tracked(tmp_path):
+    session = make_session(tmp_path)
+    assert session.is_focused() is True  # no pid yet: nothing to compare against
+
+
 # -- the history ----------------------------------------------------------
 def test_time_is_written_as_the_session_goes(tmp_path):
     session = make_session(tmp_path)
+    session.read_seconds = 60.0
     session._record_playtime()
-    recorded = session.playtime.total("sg")
-    assert 55 <= recorded <= 70  # the minute since start_time
+    assert session.playtime.total("sg") == 60.0
 
 
 def test_a_mid_session_save_is_not_counted_twice(tmp_path):
     session = make_session(tmp_path)
+    session.read_seconds = 60.0
     session._record_playtime()
     session._record_playtime()
+    session.read_seconds = 90.0
     session._record_playtime(final=True)
-    assert 55 <= session.playtime.total("sg") <= 70
+    assert session.playtime.total("sg") == 90.0
     assert session.playtime.get("sg").sessions == 1
 
 
@@ -114,3 +173,70 @@ def test_a_broken_history_never_ends_the_session(tmp_path):
 
     session.playtime.add = explode
     session._record_playtime(final=True)  # must not raise
+
+
+# -- the chapter, read off the game's own title bar -------------------------
+def test_a_chapter_in_the_title_becomes_the_status_line(tmp_path, monkeypatch):
+    session = make_session(tmp_path, chapter_pattern=r"Chapter \d+")
+    session._tracked_pid = 4242
+    monkeypatch.setattr(
+        "vnpresence.session.titles_for", lambda pid: ["Some VN - Chapter 3"]
+    )
+    assert session.live_state(PresenceState()).status_text == "Chapter 3"
+
+
+def test_a_capture_group_is_what_gets_shown(tmp_path, monkeypatch):
+    session = make_session(tmp_path, chapter_pattern=r"Route: (.+?)\]")
+    session._tracked_pid = 4242
+    monkeypatch.setattr(
+        "vnpresence.session.titles_for", lambda pid: ["Some VN [Route: Ayamine]"]
+    )
+    assert session.live_state(PresenceState()).status_text == "Ayamine"
+
+
+def test_a_title_that_says_nothing_leaves_the_line_alone(tmp_path, monkeypatch):
+    session = make_session(tmp_path, chapter_pattern=r"Chapter \d+")
+    session._tracked_pid = 4242
+    monkeypatch.setattr("vnpresence.session.titles_for", lambda pid: ["Some VN"])
+    assert session.live_state(PresenceState()).status_text is None
+
+
+def test_a_typed_note_still_outranks_the_title_bar(tmp_path, monkeypatch):
+    """You know where you are better than a window title does."""
+    session = make_session(tmp_path, chapter_pattern=r"Chapter \d+")
+    session._tracked_pid = 4242
+    monkeypatch.setattr(
+        "vnpresence.session.titles_for", lambda pid: ["Some VN - Chapter 3"]
+    )
+    notes.write_note("sg", "Ayamine route, second loop")
+    assert session.live_state(PresenceState()).status_text == "Ayamine route, second loop"
+
+
+def test_the_title_bar_outranks_a_plugin_guess(tmp_path, monkeypatch):
+    session = make_session(tmp_path, chapter_pattern=r"Chapter \d+")
+    session._tracked_pid = 4242
+    monkeypatch.setattr(
+        "vnpresence.session.titles_for", lambda pid: ["Some VN - Chapter 3"]
+    )
+    state = PresenceState(status_text="Chapter 1")
+    assert session.live_state(state).status_text == "Chapter 3"
+
+
+def test_a_broken_pattern_is_dropped_rather_than_crashing(tmp_path, monkeypatch):
+    """A typo in a YAML file must not take the session down every update."""
+    session = make_session(tmp_path, chapter_pattern=r"Chapter (\d+")  # unbalanced
+    session._tracked_pid = 4242
+    monkeypatch.setattr(
+        "vnpresence.session.titles_for", lambda pid: ["Some VN - Chapter 3"]
+    )
+    assert session.chapter_from_title() is None
+    assert session.profile.chapter_pattern is None  # and not tried again
+
+
+def test_no_pattern_means_no_window_lookup(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "vnpresence.session.titles_for", lambda pid: pytest.fail("nothing to look for")
+    )
+    session = make_session(tmp_path)
+    session._tracked_pid = 4242
+    assert session.chapter_from_title() is None
