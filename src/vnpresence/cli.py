@@ -755,10 +755,19 @@ def _vndb_check(config: AppConfig) -> None:
 
 
 def _warn_about_emulator(profile: GameProfile) -> None:
-    """An emulator with no window match would answer for its whole library."""
-    if profile.window_match or not is_emulator(profile.path):
+    """The two things that surprise everyone who adds an emulator."""
+    if not is_emulator(profile.path):
         return
     name = emulator_label(profile.path) or "an emulator"
+    click.secho(f"\n! {name} publishes a Discord activity of its own.", fg="yellow")
+    click.echo(
+        "  Discord shows one game at a time, so while the emulator's is on,\n"
+        "  VNPresence's is underneath it and you will not see it at all.\n"
+        "  Turn it off in the emulator's settings - it is usually called\n"
+        "  \"Enable Discord Rich Presence\" - and VNPresence's takes over."
+    )
+    if profile.window_match:
+        return
     click.secho(
         f"\n! {name} runs every game you own, so on its own it cannot say which "
         "one you are reading.",

@@ -484,6 +484,14 @@ class App(tk.Tk):
                 suggestion, loaded_name = item.match, item.game
                 break
 
+        messagebox.showinfo(
+            "One more thing about emulators",
+            f"{name} publishes a Discord activity of its own, and Discord only "
+            "shows one game at a time - so while the emulator's is on, "
+            "VNPresence's sits underneath it and you never see it.\n\n"
+            "Turn it off in the emulator's settings (usually \u201cEnable "
+            "Discord Rich Presence\u201d) and VNPresence's takes over.",
+        )
         typed = simpledialog.askstring(
             "Emulated game",
             f"{name} runs every game you own, so VNPresence needs to know which "

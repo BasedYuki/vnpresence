@@ -298,6 +298,19 @@ PCSX2     Clannad
 Ryujinx   Ryujinx 1.1.1 - Steins;Gate Elite v1.0.0 (01001B300B9BE000)
 ```
 
+**Turn the emulator's own Discord presence off first.** Ryujinx, PPSSPP,
+PCSX2, Citra, DuckStation and most of the others publish a Rich Presence of
+their own, on by default. Discord shows **one** game at a time, so while the
+emulator's is on, VNPresence's sits underneath it and you never see it - the
+novel is tracked, the reading time is counted, and the card you are looking
+at says "Ryujinx". Close the emulator and VNPresence's appears for a moment
+before the session ends, which is the symptom that sends people looking for a
+bug that is not there.
+
+It is one checkbox, usually under **Options → Settings → Enable Discord Rich
+Presence**. VNPresence's card is the one with the cover, the VNDB details and
+the route you are on.
+
 **Point at the emulator, not at the ROM.** This is the one thing everybody
 gets wrong first, and understandably: the `.xci`, the `.iso`, the `.chd` *is*
 the game, as far as anyone thinks about it. But Windows cannot run it - it is
@@ -770,6 +783,8 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | It matched the wrong entry with the same name | Repoint it with `vnpresence link <game> <vndb link>`, or **VNDB link…** in the window. The link is exact; a name is not |
 | The reading total keeps rising while I am in another window | Run `vnpresence focus <game>` and move around: it prints which window has the focus, how long since you touched anything, and what that counts as. If every line says `reading`, check `focused_time_only` in `config.yaml` and that you are on 0.14.0 or newer (`vnpresence --version`) |
 | It says `Idle` while I am reading | You are on a long auto-mode scene, or reading with a controller - neither reaches `GetLastInputInfo`. Raise `idle_after` in `config.yaml`, or set it to `0` |
+| The emulator opens and Discord shows the *emulator* playing, not the novel | The emulator's own Rich Presence is on and Discord shows one game at a time. Turn it off in the emulator's settings ("Enable Discord Rich Presence") |
+| The emulator opens but no presence appears | Fixed in 0.15.2. Before it, VNPresence waited for the game's name to reach the emulator's title bar and gave up after twelve seconds - less time than a Switch game takes to compile its shaders |
 | `%1 is not a valid Win32 application` when I press Play | You added the ROM instead of the emulator. Re-add it: `vnpresence add "C:\path\to\Ryujinx.exe" --rom "D:\roms\game.xci"`, or remove the game and pick the emulator under **Add game…** |
 | Reading time starts at zero for a game I have played for years | VNPresence only counts what it saw. Seed it once with `vnpresence stats <game> --set 50h`, or **Time read…** in the window |
 | You see the presence but no buttons | Discord does not render buttons on **your own** profile - ask a friend, or check from another account |

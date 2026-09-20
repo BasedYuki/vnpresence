@@ -153,3 +153,75 @@ def test_belongs_to_survives_a_process_that_just_died():
     from vnpresence.launcher import belongs_to
 
     assert belongs_to(2**22 - 1, 1) is False
+
+
+# -- an emulator we started ourselves --------------------------------------
+def emulator_profile(**kwargs):
+    base = {
+        "id": "mamiya",
+        "title": "MAMIYA",
+        "path": r"C:\Ryujinx\Ryujinx.exe",
+        "args": [r"D:\roms\MAMIYA.xci"],
+        "window_match": "MAMIYA",
+    }
+    base.update(kwargs)
+    return GameProfile(**base)
+
+
+def test_a_window_match_still_gates_a_game_somebody_else_started(monkeypatch):
+    """Auto-detect must not let one emulator answer for its whole library."""
+    running = FakeProcess(9, "Ryujinx.exe", exe=r"c:\ryujinx\ryujinx.exe")
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [running])
+    monkeypatch.setattr(launcher, "titles_for", lambda pid: ["Ryujinx 1.1.1"])
+
+    assert _find_candidate(emulator_profile(), set()) is None
+
+
+def test_but_not_one_we_launched_with_the_game_in_our_own_hands(monkeypatch):
+    """We told the emulator which game to open, so we already know.
+
+    Waiting for the title bar here meant waiting for shader compilation - and
+    giving up before the game had finished booting, which is why the presence
+    only flickered into view as the emulator was being closed.
+    """
+    running = FakeProcess(9, "Ryujinx.exe", exe=r"c:\ryujinx\ryujinx.exe")
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [running])
+    monkeypatch.setattr(launcher, "titles_for", lambda pid: ["Ryujinx 1.1.1"])
+
+    assert _find_candidate(emulator_profile(), set(), require_window=False) is running
+
+
+def test_an_emulator_gets_long_enough_to_boot_a_game(monkeypatch):
+    """Twelve seconds is a visual novel's launcher, not a Switch game."""
+    started = [0.0]
+    monkeypatch.setattr(launcher.time, "time", lambda: started[0])
+    monkeypatch.setattr(launcher.time, "sleep", lambda s: started.__setitem__(0, started[0] + s))
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [])
+
+    class Handoff:
+        """An emulator that passes the game to a running instance and exits."""
+
+        pid = 5
+
+        def poll(self):
+            return 0
+
+    resolve_tracked_process(emulator_profile(), Handoff(), now=0.0)
+    assert started[0] >= launcher.EMULATOR_GRACE  # it kept looking, not 12s
+
+
+def test_a_readers_own_grace_is_never_overridden(monkeypatch):
+    """Someone who set launcher_grace meant it."""
+    started = [0.0]
+    monkeypatch.setattr(launcher.time, "time", lambda: started[0])
+    monkeypatch.setattr(launcher.time, "sleep", lambda s: started.__setitem__(0, started[0] + s))
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [])
+
+    class Handoff:
+        pid = 5
+
+        def poll(self):
+            return 0
+
+    resolve_tracked_process(emulator_profile(launcher_grace=5.0), Handoff(), now=0.0)
+    assert started[0] < launcher.EMULATOR_GRACE

@@ -26,7 +26,7 @@ from pathlib import Path
 
 import psutil
 
-from .emulators import is_rom, matches_window, rom_kind
+from .emulators import is_emulator, is_rom, matches_window, rom_kind
 from .models import GameProfile
 from .titlebar import titles_for
 
@@ -98,6 +98,13 @@ ERROR_ELEVATION_REQUIRED = 740
 #: "%1 is not a valid Win32 application" - almost always a ROM or a disc image
 #: handed over as if it were the game's executable.
 ERROR_BAD_EXE_FORMAT = 193
+
+#: What GameProfile.launcher_grace defaults to. Compared against, not used, so
+#: that a reader who set their own value keeps it.
+DEFAULT_GRACE = 12.0
+
+#: How long to keep looking when the program we started is an emulator.
+EMULATOR_GRACE = 90.0
 
 
 class ElevatedLaunch:
@@ -185,6 +192,12 @@ def resolve_tracked_process(
     if getattr(process, "needs_uac", False):
         # The user still has to click through the UAC prompt.
         grace = max(grace, 60.0)
+    if is_emulator(profile.path) and profile.launcher_grace == DEFAULT_GRACE:
+        # An emulator handed a game often passes it to an instance already
+        # running and exits, and the instance it handed it to may still be
+        # compiling shaders. Twelve seconds is how long a visual novel's
+        # launcher takes; it is not how long a Switch game takes to boot.
+        grace = max(grace, EMULATOR_GRACE)
     deadline = started_at + grace
     descendants = _watch_descendants(process.pid)
 
@@ -194,7 +207,7 @@ def resolve_tracked_process(
             time.sleep(poll_interval)
             continue
         # The process we started has exited. Someone else may be the game now.
-        candidate = _find_candidate(profile, descendants)
+        candidate = _find_candidate(profile, descendants, require_window=False)
         if candidate is not None:
             log.info("following process %s (pid %s)", candidate.name(), candidate.pid)
             return TrackedGame(candidate.pid, candidate.name(), started_at)
@@ -204,7 +217,7 @@ def resolve_tracked_process(
         name = Path(profile.path).name
         return TrackedGame(process.pid, name, started_at)
 
-    candidate = _find_candidate(profile, descendants)
+    candidate = _find_candidate(profile, descendants, require_window=False)
     if candidate is not None:
         return TrackedGame(candidate.pid, candidate.name(), started_at)
     return None
@@ -243,11 +256,23 @@ def _watch_descendants(pid: int) -> set[int]:
         return set()
 
 
-def _find_candidate(profile: GameProfile, descendants: set[int]) -> psutil.Process | None:
+def _find_candidate(
+    profile: GameProfile,
+    descendants: set[int],
+    *,
+    require_window: bool = True,
+) -> psutil.Process | None:
     wanted_names = {n.lower() for n in profile.process_names}
     #: An emulated game is identified by what its emulator has loaded, not by
     #: the emulator's own name or path - those are the same for every game.
-    wanted_window = profile.window_match
+    #:
+    #: Unless we started the emulator ourselves and told it which game to open.
+    #: Then we already know, and waiting for the title bar to agree is waiting
+    #: for nothing: an emulator puts the game in its title only once the game
+    #: has booted, which for a Switch title can be a minute of shader
+    #: compilation. Gating on it there meant the reader sat looking at no
+    #: presence at all, and the code gave up before the game had even started.
+    wanted_window = profile.window_match if require_window else None
     exe_path = Path(profile.path).expanduser() if profile.path else None
     game_dir, exe_name = _split_path(profile.path or "")
 
