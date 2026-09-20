@@ -24,7 +24,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from . import __version__, startup, theme, update
 from .config import AppConfig
 from .daemon import running_pid, spawn_background, stop_background
-from .emulators import is_emulator
+from .emulators import is_emulator, is_rom, rom_kind
 from .emulators import label as emulator_label
 from .emulators import running as running_emulators
 from .launcher import LaunchError
@@ -359,6 +359,13 @@ class App(tk.Tk):
         )
         if not path:
             return
+        rom = self._ask_for_the_emulator(path)
+        if rom is False:  # a game file, and they did not pick an emulator
+            return
+        if rom:  # they picked one: the emulator is the program, the ROM its argument
+            path, rom_path = rom
+        else:
+            rom_path = None
         # An emulator is not a game: it runs a whole library, and only its
         # window title says which one. Ask before anything else, because the
         # answer changes what we search VNDB for.
@@ -366,8 +373,9 @@ class App(tk.Tk):
         if window_match is False:  # they cancelled
             return
 
-        # The .exe is usually named after the engine, the folder after the game.
-        guess = guess_title(path)
+        # The .exe is usually named after the engine, the folder after the
+        # game - and with an emulator, neither: the ROM's name is the game.
+        guess = guess_title(rom_path or path)
         if isinstance(window_match, str) and window_match:
             guess = self._emulator_guess or guess
         candidates, problem = self._candidates(guess)
@@ -390,6 +398,9 @@ class App(tk.Tk):
             id=self.library.unique_id(title),
             title=title,
             path=path,
+            # The emulator is started with the game as its argument, which is
+            # what makes Play open the novel rather than an empty emulator.
+            args=[rom_path] if rom_path else [],
             vndb_id=vndb_id,
             window_match=window_match or None,
             privacy=PrivacyMode(self.config_data.default_privacy),
@@ -420,6 +431,40 @@ class App(tk.Tk):
                 "executable instead of the launcher.",
             )
         self.status.set(f"Added {title}")
+
+    def _ask_for_the_emulator(self, path: str):
+        """Picked a ROM? Offer to point at the emulator instead.
+
+        Returns None when the file is an ordinary program, False when they
+        gave up, or (emulator, rom) when they picked one. Choosing the ROM is
+        the natural mistake - it is the thing a reader thinks of as the game -
+        and the only thing Windows says about it is "%1 is not a valid Win32
+        application", hours later, when they press Play.
+        """
+        if not is_rom(path):
+            return None
+        name = path.replace("\\", "/").rsplit("/", 1)[-1]
+        if not messagebox.askyesno(
+            "That is a game file, not a program",
+            f"{name} is a {rom_kind(path)}.\n\n"
+            "VNPresence starts a program and follows it. For an emulated game "
+            "that program is the emulator, and the game is what you tell it to "
+            "open.\n\nPick the emulator now?",
+        ):
+            return False
+        emulator = filedialog.askopenfilename(
+            title="Select the emulator (Ryujinx, RPCS3, PPSSPP…)",
+            filetypes=[("Programs", "*.exe"), ("All files", "*.*")],
+        )
+        if not emulator:
+            return False
+        if not is_emulator(emulator) and not messagebox.askyesno(
+            "VNPresence",
+            f"{emulator.replace(chr(92), '/').rsplit('/', 1)[-1]} is not an "
+            "emulator VNPresence knows by name.\n\nUse it anyway?",
+        ):
+            return False
+        return emulator, path
 
     def _ask_emulator(self, path: str):
         """For an emulator, work out which game is loaded. False = cancelled.

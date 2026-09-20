@@ -26,7 +26,7 @@ from pathlib import Path
 
 import psutil
 
-from .emulators import matches_window
+from .emulators import is_rom, matches_window, rom_kind
 from .models import GameProfile
 from .titlebar import titles_for
 
@@ -95,6 +95,10 @@ def belongs_to(pid: int | None, owner: int | None, *, depth: int = MAX_ANCESTRY)
 #: administrator rights fails with this error until we go through the shell.
 ERROR_ELEVATION_REQUIRED = 740
 
+#: "%1 is not a valid Win32 application" - almost always a ROM or a disc image
+#: handed over as if it were the game's executable.
+ERROR_BAD_EXE_FORMAT = 193
+
 
 class ElevatedLaunch:
     """Stand-in for Popen when the game was started through a UAC prompt.
@@ -117,6 +121,17 @@ def launch(profile: GameProfile) -> subprocess.Popen | ElevatedLaunch:
     exe = Path(profile.path).expanduser()
     if not exe.exists():
         raise LaunchError(f"executable not found: {exe}")
+    if is_rom(exe):
+        # Caught here rather than left to Windows, which answers "%1 is not a
+        # valid Win32 application" - true, unhelpful, and the first thing a
+        # reader sees after doing something entirely reasonable.
+        raise LaunchError(
+            f"{exe.name} is a {rom_kind(exe)}, not a program Windows can run.\n"
+            "An emulated game is added by pointing at the emulator and saying "
+            "which game it is loading:\n"
+            f'  vnpresence add "C:\\path\\to\\Ryujinx.exe" --rom "{exe}"\n'
+            "See docs/emulators or the Emulated visual novels section of the README."
+        )
 
     cwd = profile.working_dir or str(exe.parent)
     command = [str(exe), *profile.args]
@@ -129,6 +144,13 @@ def launch(profile: GameProfile) -> subprocess.Popen | ElevatedLaunch:
     except OSError as exc:
         if getattr(exc, "winerror", None) == ERROR_ELEVATION_REQUIRED:
             return _launch_elevated(exe, profile.args, cwd)
+        if getattr(exc, "winerror", None) == ERROR_BAD_EXE_FORMAT:
+            raise LaunchError(
+                f"{exe.name} is not a program Windows can run. If it is a game "
+                "for an emulator, point at the emulator instead and pass the "
+                "game with --rom; if it is a 16-bit or a non-Windows build, "
+                "there is nothing VNPresence can do with it."
+            ) from exc
         raise LaunchError(f"could not start {exe.name}: {exc}") from exc
 
 

@@ -12,7 +12,7 @@ import click
 from . import __version__
 from .config import AppConfig, config_dir, config_file, games_dir
 from .emulators import EMULATORS as EMULATOR_LABELS
-from .emulators import is_emulator
+from .emulators import is_emulator, is_rom, rom_kind
 from .emulators import label as emulator_label
 from .emulators import running as running_emulators
 from .idle import idle_seconds
@@ -65,6 +65,12 @@ def main(verbose: bool) -> None:
     help="For an emulated game: text (ideally the disc serial) from the emulator's title bar.",
 )
 @click.option("--arg", "args", multiple=True, help="Argument passed to the executable, repeatable.")
+@click.option(
+    "--rom",
+    "rom",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="The game file the emulator should open (.xci, .iso, .chd...).",
+)
 def add_game(
     path: Path,
     title: str | None,
@@ -74,21 +80,44 @@ def add_game(
     process_names: tuple[str, ...],
     window_match: str | None,
     args: tuple[str, ...],
+    rom: Path | None,
 ) -> None:
     """Add a game by pointing at its executable.
 
     For a game inside an emulator, point at the emulator and say which game:
 
         vnpresence add "C:\\rpcs3\\rpcs3.exe" --window BLJM60123 --search "Muv-Luv"
+
+    Or hand it both and let it work the rest out:
+
+        vnpresence add "C:\\Ryujinx\\Ryujinx.exe" --rom "D:\\roms\\game.xci"
     """
     config = AppConfig.load()
     library = Library()
     metadata = None
 
+    # Pointed at the ROM instead of the emulator? An easy thing to do, and
+    # Windows' own answer to it ("%1 is not a valid Win32 application") helps
+    # nobody. Say what happened and what to type instead.
+    if is_rom(path):
+        raise click.ClickException(
+            f"{path.name} is a {rom_kind(path)}, not a program.\n"
+            "VNPresence starts the emulator, and the emulator opens the game:\n"
+            f'  vnpresence add "C:\\path\\to\\Ryujinx.exe" --rom "{path}"'
+        )
+    if rom is not None:
+        if not is_emulator(str(path)) and not click.confirm(
+            f"{path.name} is not an emulator VNPresence knows. Use it anyway?",
+            default=True,
+        ):
+            return
+        # The emulator is the program; the game is what it is told to open.
+        args = (*args, str(rom.resolve()))
+
     # The executable is often named after the engine (SiglusEngine, reallive,
     # game.exe), so the folder is usually the better guess for both the search
     # and the fallback title.
-    guessed = guess_title(path)
+    guessed = guess_title(rom) if rom is not None else guess_title(path)
 
     if vndb_id:
         vndb_id = normalise_vndb_id(vndb_id)

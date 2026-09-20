@@ -89,6 +89,7 @@ Everything is available from the command line too:
 
 ```bash
 vnpresence add "D:\VN\Steins Gate\sg.exe"   # add a game (searches VNDB for you)
+vnpresence add "C:\Ryujinx\Ryujinx.exe" --rom "D:\roms\g.xci"   # an emulated one
 vnpresence list                             # what is in your library
 vnpresence play steins-gate                 # launch it and publish the presence
 vnpresence play steins-gate --attach        # attach to a game that is already open
@@ -296,6 +297,22 @@ PPSSPP    ULJM05800 : Steins;Gate
 PCSX2     Clannad
 Ryujinx   Ryujinx 1.1.1 - Steins;Gate Elite v1.0.0 (01001B300B9BE000)
 ```
+
+**Point at the emulator, not at the ROM.** This is the one thing everybody
+gets wrong first, and understandably: the `.xci`, the `.iso`, the `.chd` *is*
+the game, as far as anyone thinks about it. But Windows cannot run it - it is
+data, not a program - and its own complaint about that (`%1 is not a valid
+Win32 application`) explains nothing. VNPresence now says so plainly and takes
+both in one line:
+
+```bash
+vnpresence add "C:\Ryujinx\Ryujinx.exe" --rom "D:\roms\MAMIYA.xci"
+```
+
+That starts the emulator **with the game already loading**, and names the game
+after the ROM rather than after the emulator. In the window, picking a game
+file under **Add game…** gets you the same offer: it says what the file is and
+asks you to point at the emulator.
 
 So: start the game in the emulator, then ask what it sees.
 
@@ -753,6 +770,7 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | It matched the wrong entry with the same name | Repoint it with `vnpresence link <game> <vndb link>`, or **VNDB link…** in the window. The link is exact; a name is not |
 | The reading total keeps rising while I am in another window | Run `vnpresence focus <game>` and move around: it prints which window has the focus, how long since you touched anything, and what that counts as. If every line says `reading`, check `focused_time_only` in `config.yaml` and that you are on 0.14.0 or newer (`vnpresence --version`) |
 | It says `Idle` while I am reading | You are on a long auto-mode scene, or reading with a controller - neither reaches `GetLastInputInfo`. Raise `idle_after` in `config.yaml`, or set it to `0` |
+| `%1 is not a valid Win32 application` when I press Play | You added the ROM instead of the emulator. Re-add it: `vnpresence add "C:\path\to\Ryujinx.exe" --rom "D:\roms\game.xci"`, or remove the game and pick the emulator under **Add game…** |
 | Reading time starts at zero for a game I have played for years | VNPresence only counts what it saw. Seed it once with `vnpresence stats <game> --set 50h`, or **Time read…** in the window |
 | You see the presence but no buttons | Discord does not render buttons on **your own** profile - ask a friend, or check from another account |
 | "requires elevation" / WinError 740 | The game demands administrator rights. VNPresence re-launches it through a UAC prompt - approve it. To stop being asked every time, right-click the .exe → Properties → Compatibility, or run VNPresence as administrator |

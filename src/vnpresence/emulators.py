@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 #: Executables that run other people's games. Matched on the file name, so
 #: rpcs3.exe and rpcs3 (Linux) are the same entry.
@@ -62,6 +63,63 @@ EMULATORS: dict[str, str] = {
 #: Four letters and five digits covers every Sony serial there is - BLJM60123,
 #: NPEB01234, ULJM05800, SLPM-66408, PCSG00123 - without needing a table of
 #: region codes that would go out of date. Switch title ids are 16 hex digits.
+#: Game files, not programs. Somebody who has just set up an emulator points
+#: VNPresence at the thing they think of as the game - the ROM - and Windows
+#: answers "%1 is not a valid Win32 application", which explains nothing to
+#: anyone. Recognising the extension turns that into an answer.
+ROM_SUFFIXES: dict[str, str] = {
+    ".xci": "Switch cartridge dump",
+    ".nsp": "Switch package",
+    ".nsz": "Switch package (compressed)",
+    ".xcz": "Switch cartridge dump (compressed)",
+    ".3ds": "3DS ROM",
+    ".cci": "3DS ROM",
+    ".cia": "3DS installable",
+    ".nds": "DS ROM",
+    ".gba": "Game Boy Advance ROM",
+    ".gbc": "Game Boy Color ROM",
+    ".sfc": "Super Famicom ROM",
+    ".smc": "Super Famicom ROM",
+    ".n64": "Nintendo 64 ROM",
+    ".z64": "Nintendo 64 ROM",
+    ".v64": "Nintendo 64 ROM",
+    ".gcm": "GameCube disc image",
+    ".rvz": "Wii/GameCube disc image",
+    ".wbfs": "Wii disc image",
+    ".wud": "Wii U disc image",
+    ".wux": "Wii U disc image",
+    ".iso": "disc image",
+    ".cso": "compressed disc image",
+    ".chd": "compressed disc image",
+    ".pbp": "PSP package",
+    ".vpk": "Vita package",
+    ".cue": "disc index",
+    ".gdi": "Dreamcast disc index",
+    ".cdi": "Dreamcast disc image",
+    ".mdf": "disc image",
+    ".nrg": "disc image",
+    ".xbe": "Xbox executable",
+    ".pkg": "package",
+    ".rom": "ROM",
+    ".zip": "archive",
+    ".7z": "archive",
+}
+
+
+def is_rom(path: str | None) -> bool:
+    """Is this a game file rather than something Windows can run?"""
+    if not path:
+        return False
+    return Path(path).suffix.lower() in ROM_SUFFIXES
+
+
+def rom_kind(path: str | None) -> str:
+    """What to call it when explaining the mistake."""
+    if not path:
+        return "a game file"
+    return ROM_SUFFIXES.get(Path(path).suffix.lower(), "a game file")
+
+
 SERIAL = re.compile(r"\b([A-Z]{4}-?\d{5}|[0-9A-F]{16})\b", re.IGNORECASE)
 
 _NAMES = "|".join(sorted((re.escape(n) for n in set(EMULATORS)), key=len, reverse=True))

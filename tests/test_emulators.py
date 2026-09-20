@@ -223,3 +223,46 @@ def test_a_profile_without_one_is_unchanged():
     """The key must stay out of the YAML of every ordinary game."""
     profile = GameProfile(id="clannad", title="Clannad", path="/c.exe")
     assert "window_match" not in profile.to_dict()
+
+
+# -- a ROM is not a program ------------------------------------------------
+def test_a_switch_rom_is_recognised_as_a_game_file():
+    """The friend's actual file, and the mistake it represents."""
+    from vnpresence.emulators import is_rom, rom_kind
+
+    rom = r"D:\Games\MAMIYA - A Shared Illusion of the World's End - Switch XCI Base Game.xci"
+    assert is_rom(rom) is True
+    assert rom_kind(rom) == "Switch cartridge dump"
+
+
+def test_the_usual_disc_images_and_packages_too():
+    from vnpresence.emulators import is_rom
+
+    for name in ["game.iso", "game.chd", "game.nsp", "g.cso", "g.3ds", "g.gba", "g.CHD"]:
+        assert is_rom(name) is True, name
+
+
+def test_a_real_program_is_not_a_rom():
+    from vnpresence.emulators import is_rom
+
+    for name in [r"C:\Ryujinx\Ryujinx.exe", r"D:\VN\sg.exe", "", None]:
+        assert is_rom(name) is False, name
+
+
+def test_launching_a_rom_explains_itself_instead_of_erroring_in_windows_words(tmp_path):
+    """WinError 193 says "%1 is not a valid Win32 application" and no more."""
+    import pytest
+
+    from vnpresence.launcher import LaunchError, launch
+    from vnpresence.models import GameProfile
+
+    rom = tmp_path / "MAMIYA - Switch XCI Base Game.xci"
+    rom.write_bytes(b"not an exe")
+    profile = GameProfile(id="m", title="MAMIYA", path=str(rom))
+
+    with pytest.raises(LaunchError) as caught:
+        launch(profile)
+    message = str(caught.value)
+    assert "Switch cartridge dump" in message
+    assert "not a program Windows can run" in message
+    assert "--rom" in message  # and what to type instead
