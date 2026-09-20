@@ -311,3 +311,56 @@ def test_the_timer_is_re_anchored_to_the_reading_time(tmp_path):
     session._resume_timer()
     shown = time.time() - session._timer_start
     assert 599 <= shown <= 601
+
+
+# -- what the summary says when the session ends ---------------------------
+def make_result(read, open_for, total):
+    from vnpresence.models import PrivacyMode
+    from vnpresence.session import SessionResult
+
+    return SessionResult(
+        title="Steins;Gate",
+        seconds=open_for,
+        privacy=PrivacyMode.FULL,
+        metadata_source="vndb",
+        total_seconds=total,
+        read_seconds=read,
+    )
+
+
+def test_the_summary_leads_with_reading_time_not_time_open():
+    """The bug: "3m 2s" after a session was the time the game was *open*."""
+    from vnpresence.session import describe_session
+
+    line = describe_session(make_result(read=182, open_for=1800, total=182))
+    assert line.startswith("3m 2s read")
+    assert "30m 0s open" in line  # the other number, said plainly
+
+
+def test_a_session_with_nothing_to_explain_says_one_thing():
+    from vnpresence.session import describe_session
+
+    assert describe_session(make_result(read=600, open_for=600, total=600)) == "10m 0s read"
+
+
+def test_the_loops_own_overhead_is_not_reported_as_time_away():
+    """read_seconds is added a tick at a time, so it lags the clock slightly."""
+    from vnpresence.session import describe_session
+
+    five_hours = 5 * 3600
+    line = describe_session(make_result(read=five_hours - 90, open_for=five_hours, total=0))
+    assert "open" not in line  # 90 seconds in five hours is drift, not a break
+
+
+def test_a_real_break_is_reported_however_short_the_session():
+    from vnpresence.session import describe_session
+
+    line = describe_session(make_result(read=120, open_for=300, total=0))
+    assert "5m 0s open" in line
+
+
+def test_the_lifetime_total_joins_in_when_it_adds_something():
+    from vnpresence.session import describe_session
+
+    line = describe_session(make_result(read=600, open_for=600, total=41 * 3600))
+    assert line == "10m 0s read · 41h 0m in total"

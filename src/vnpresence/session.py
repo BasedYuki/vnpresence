@@ -36,12 +36,16 @@ RECORD_EVERY = 60.0
 @dataclass
 class SessionResult:
     title: str
+    #: How long the game was *open*. Not how long it was read: it counts the
+    #: twenty minutes the reader spent in a browser with the novel behind it.
     seconds: float
     privacy: PrivacyMode
     metadata_source: str
     #: Everything ever read of this game, this session included.
     total_seconds: float = 0.0
-    #: Of this session, the part spent with the game actually in front.
+    #: Of this session, the part actually spent reading - the game in use,
+    #: somebody there. This is the number that matches what the presence
+    #: showed all evening, so it is the one a summary should lead with.
     read_seconds: float = 0.0
 
 
@@ -415,6 +419,30 @@ class GameSession:
                 "to 'process_names' in the game profile."
             )
         return tracked
+
+
+#: Below this, the gap between "open" and "read" is the loop's own overhead
+#: rather than time the reader spent elsewhere, and saying so would be noise.
+GAP_SECONDS = 60.0
+GAP_SHARE = 0.05
+
+
+def describe_session(result: SessionResult) -> str:
+    """One line for the end of a session, in the words the reader expects.
+
+    The obvious number to print is how long the game was open, and it is the
+    wrong one: it counts every minute spent in a browser with the novel
+    sitting behind it, and someone reading "3m 2s" after a session takes that
+    for reading time. So the reading time leads, and the other two numbers
+    appear only when they say something the first one does not.
+    """
+    parts = [f"{format_duration(result.read_seconds)} read"]
+    away = result.seconds - result.read_seconds
+    if away >= GAP_SECONDS and away >= result.seconds * GAP_SHARE:
+        parts.append(f"{format_duration(result.seconds)} open")
+    if result.total_seconds - result.read_seconds >= GAP_SECONDS:
+        parts.append(f"{format_duration(result.total_seconds)} in total")
+    return " · ".join(parts)
 
 
 def format_duration(seconds: float) -> str:

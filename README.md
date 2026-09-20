@@ -550,6 +550,19 @@ vnpresence stats
 # Rewrite+     12h 40m  7 sessions  last 2026-09-19
 ```
 
+The line printed when a session ends leads with the same number, and names
+the other two rather than leaving you to guess which one you are looking at:
+
+```
+✓ Rewrite+: 3m 2s read · 30m 0s open · 41h 3m in total
+```
+
+`read` is what counts, `open` is how long the game was up (shown only when
+the two differ enough to mean something), `in total` is every session. In the
+window the same line lands in the status bar, and the **Time read** column
+re-reads itself once a minute while a game is running - it does not wait for
+a restart.
+
 **Only while you are reading.** Time counts while the game is the window you
 are *using* - the focused one, not merely one you can see. Two monitors make
 the difference: a novel sitting open on the left while you type in Discord on

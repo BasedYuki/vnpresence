@@ -631,3 +631,80 @@ def test_choosing_a_theme_saves_it(app, monkeypatch):
 
 def test_the_default_theme_is_the_dark_one():
     assert gui.AppConfig().theme == "midnight"
+
+
+# -- the library list keeps up with the session ----------------------------
+class FakeWorker:
+    def __init__(self, alive):
+        self._alive = alive
+
+    def is_alive(self):
+        return self._alive
+
+
+def _refresh_spy(app):
+    """Record refreshes, and run whatever after() schedules straight away."""
+    calls = {"refresh": 0, "after": []}
+    app.refresh = lambda: calls.__setitem__("refresh", calls["refresh"] + 1)
+    app.after = lambda delay, fn=None, *a: calls["after"].append((delay, fn))
+    return calls
+
+
+def test_the_total_is_re_read_while_a_session_runs(app):
+    """Reported as "Time read only updates after restarting VNPresence"."""
+    calls = _refresh_spy(app)
+    app.worker = FakeWorker(alive=True)
+
+    app.keep_the_total_fresh()
+    assert calls["refresh"] == 1
+    # ...and it books itself in again, so the number follows the evening.
+    assert calls["after"] and calls["after"][0][1] == app.keep_the_total_fresh
+
+
+def test_it_stops_asking_once_the_session_is_over(app):
+    calls = _refresh_spy(app)
+    app.worker = FakeWorker(alive=False)
+
+    app.keep_the_total_fresh()
+    assert calls["refresh"] == 0
+    assert calls["after"] == []
+
+
+def test_no_session_at_all_is_not_an_error(app):
+    calls = _refresh_spy(app)
+    app.worker = None
+    app.keep_the_total_fresh()
+    assert calls["refresh"] == 0
+
+
+def test_the_list_is_refreshed_when_the_session_ends(app, monkeypatch):
+    """The history is written as the session ends; the screen has to follow."""
+    from vnpresence.models import PrivacyMode
+    from vnpresence.session import SessionResult
+
+    calls = _refresh_spy(app)
+    app.session = types.SimpleNamespace(
+        run=lambda **kwargs: SessionResult(
+            title="X", seconds=600, privacy=PrivacyMode.FULL,
+            metadata_source="vndb", total_seconds=600, read_seconds=600,
+        )
+    )
+    app._set_status = lambda text: calls.__setitem__("status", text)
+
+    app._run_session()
+    assert calls["after"] == [(0, app.refresh)]
+    assert calls["status"] == "X: 10m 0s read"
+
+
+def test_the_list_is_refreshed_even_when_the_session_crashed(app):
+    calls = _refresh_spy(app)
+
+    def boom(**kwargs):
+        raise RuntimeError("the game exploded")
+
+    app.session = types.SimpleNamespace(run=boom)
+    app._set_status = lambda text: calls.__setitem__("status", text)
+
+    app._run_session()
+    assert calls["after"] == [(0, app.refresh)]
+    assert "exploded" in calls["status"]

@@ -32,11 +32,16 @@ from .library import Library
 from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
 from .notes import read_note, write_note
 from .playtime import Playtime, format_reading_time, parse_duration
-from .session import GameSession, format_duration
+from .session import GameSession, describe_session
 from .titles import guess_title
 from .vndb import VNDBClient, VNDBError
 
 log = logging.getLogger(__name__)
+
+#: How often the library list re-reads the reading history while a session is
+#: running. The session writes it once a minute, so anything faster would be
+#: redrawing the same numbers.
+REFRESH_WHILE_PLAYING = 60_000  # milliseconds
 
 PRIVACY_HELP = {
     PrivacyMode.AUTO: "Auto - hide the title for 18+ games",
@@ -821,18 +826,37 @@ class App(tk.Tk):
         self.session = GameSession(profile, self.config_data)
         self.worker = threading.Thread(target=self._run_session, daemon=True)
         self.worker.start()
+        self.after(REFRESH_WHILE_PLAYING, self.keep_the_total_fresh)
 
     def _run_session(self) -> None:
         assert self.session is not None
         try:
             result = self.session.run(on_event=self._on_event)
-            self._set_status(f"{result.title}: {format_duration(result.seconds)}")
+            self._set_status(f"{result.title}: {describe_session(result)}")
         except LaunchError as exc:
             self._set_status(f"Error: {exc}")
             messagebox.showerror("VNPresence", str(exc))
         except Exception as exc:  # pragma: no cover - defensive
             log.exception("session crashed")
             self._set_status(f"Error: {exc}")
+        finally:
+            # The session has just written the evening to the history. Without
+            # this the Time read column would go on showing what it said when
+            # the window opened, which reads as "it never updates" - and was
+            # reported as exactly that. after() because this is a worker
+            # thread and the widgets belong to the main one.
+            self.after(0, self.refresh)
+
+    def keep_the_total_fresh(self) -> None:
+        """Re-read the reading history while a session is running.
+
+        The session writes it once a minute, so the number on screen can
+        follow the evening instead of being a snapshot from whenever the
+        window happened to open. Stops by itself when the session does.
+        """
+        if self.worker is not None and self.worker.is_alive():
+            self.refresh()
+            self.after(REFRESH_WHILE_PLAYING, self.keep_the_total_fresh)
 
     def stop_session(self) -> None:
         if self.session is not None:

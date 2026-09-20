@@ -22,7 +22,7 @@ from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vnd
 from .notes import clear_note, read_note, write_note
 from .playtime import Playtime, parse_duration
 from .plugins import build_registry
-from .session import GameSession, format_duration
+from .session import GameSession, describe_session, format_duration
 from .theme import PALETTES
 from .theme import get as get_theme
 from .titlebar import foreground_pid, titles_for
@@ -155,10 +155,7 @@ def play(game: str, attach: bool) -> None:
         result = GameSession(profile).run(attach=attach, on_event=report)
     except LaunchError as exc:
         raise click.ClickException(str(exc)) from exc
-    summary = f"\u2713 {result.title}: {format_duration(result.seconds)}"
-    if result.total_seconds > result.seconds:
-        summary += f" ({format_duration(result.total_seconds)} in total)"
-    click.secho(summary, fg="green")
+    click.secho(f"\u2713 {result.title}: {describe_session(result)}", fg="green")
 
 
 @main.command("link")
