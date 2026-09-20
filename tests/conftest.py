@@ -27,6 +27,30 @@ def no_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def quiet_machine(request, monkeypatch):
+    """No test may depend on where the mouse is or when it last moved.
+
+    The session asks Windows two questions - which window has the focus, and
+    how long since anybody touched anything - and on Linux both answer "no
+    idea", so a test that leaves them alone passes there by accident. On
+    Windows they answer for real: a build machine nobody has touched since it
+    booted is, correctly, idle, and seven tests that had nothing to do with
+    idling started failing on CI while passing everywhere else.
+
+    So both are answered here, for every test, with the honest "cannot tell"
+    the unit tests were written against. A test that cares patches them with
+    what it wants to see.
+
+    ``@pytest.mark.real_machine`` opts out - that is for the handful of tests
+    whose entire purpose is to call the real thing.
+    """
+    if request.node.get_closest_marker("real_machine"):
+        return
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: None)
+    monkeypatch.setattr("vnpresence.session.idle_seconds", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
     home = tmp_path / "vnpresence-home"
     home.mkdir()

@@ -186,3 +186,28 @@ def test_a_sleeping_laptop_does_not_wipe_the_evening(session, monkeypatch):
     # Only the threshold (plus the poll that noticed) can have been counted.
     handed_back = session.config.idle_after + session.config.poll_interval
     assert session.read_seconds == 7200 - handed_back
+
+
+# -- the guard that keeps this suite honest --------------------------------
+def test_the_suite_never_reads_the_real_machine():
+    """Seven tests once failed on Windows only, for want of this.
+
+    They asked the session what was happening, patched the foreground window
+    and left the idle clock alone. On Linux that clock says "no idea" and they
+    passed; on a build machine nobody had touched since boot it said "idle",
+    which is correct and had nothing to do with what they were testing.
+    """
+    from vnpresence import session
+
+    assert session.foreground_pid() is None
+    assert session.idle_seconds() is None
+
+
+@pytest.mark.real_machine
+def test_the_marker_gives_a_test_the_real_calls_back():
+    from vnpresence import idle as real
+    from vnpresence import session
+    from vnpresence import titlebar as real_titlebar
+
+    assert session.idle_seconds is real.idle_seconds
+    assert session.foreground_pid is real_titlebar.foreground_pid

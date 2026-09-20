@@ -39,9 +39,13 @@ from vnpresence.models import GameProfile
 from vnpresence.playtime import Playtime
 from vnpresence.session import GameSession
 
-pytestmark = pytest.mark.skipif(
-    sys.platform != "win32", reason="these are the Windows-only calls"
-)
+pytestmark = [
+    pytest.mark.skipif(sys.platform != "win32", reason="these are the Windows-only calls"),
+    # conftest answers "cannot tell" to both Windows questions for every other
+    # test in the suite, so that none of them depend on where the mouse is.
+    # This file is the exception that gives the real answers a look.
+    pytest.mark.real_machine,
+]
 
 #: Windows pids are multiples of 4 and stay far below this. The real check is
 #: pid_exists; this only catches a number that is not a pid at all.
