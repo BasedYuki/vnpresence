@@ -159,6 +159,10 @@ reading time it shows now is measured, not estimated.
 
 When more than one of these has something to say, the most informed wins:
 
+0. **A pause.** While you are working in another window the line reads
+   `Paused`, and while nobody has touched anything for a long time it reads
+   `Idle` - or it keeps the chapter and marks it: `Chapter 3 - Ayamine route
+   (paused)`. Everything below applies again the moment you come back.
 1. **The note you typed** - you know better than anything automatic.
 2. **`chapter_pattern`** - the game's own title bar.
 3. **A state plugin** - see [writing-plugins.md](writing-plugins.md).

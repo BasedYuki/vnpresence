@@ -171,3 +171,69 @@ def test_private_mode_leaks_neither_the_route_nor_the_reading_total():
     assert payload["state"] == CONFIG.default_status_text
     assert "40h" not in str(payload)
     assert "Ayamine" not in str(payload)
+
+
+# -- pausing ---------------------------------------------------------------
+def _paused_payload(stopped="Paused", **state_kwargs):
+    from vnpresence.config import AppConfig
+    from vnpresence.formatter import DefaultFormatter
+    from vnpresence.models import GameMetadata, GameProfile, PresenceState
+
+    return DefaultFormatter().format(
+        GameProfile(id="sg", title="Steins;Gate"),
+        GameMetadata(title="Steins;Gate", source="vndb"),
+        PresenceState(paused=stopped, **state_kwargs),
+        {"config": AppConfig(), "start": 1_700_000_000},
+    )
+
+
+def test_a_plain_reading_becomes_paused():
+    payload = _paused_payload()
+    assert payload["details"] == "Paused"
+    assert "start" not in payload
+
+
+def test_a_chapter_is_kept_and_marked():
+    payload = _paused_payload(status_text="Chapter 3 - Ayamine route")
+    assert payload["details"] == "Chapter 3 - Ayamine route (paused)"
+
+
+def test_the_pause_marker_is_never_truncated_away():
+    from vnpresence.formatter import MAX_FIELD
+
+    payload = _paused_payload(status_text="x" * 400)
+    assert payload["details"].endswith("(paused)")
+    assert len(payload["details"]) <= MAX_FIELD
+
+
+def test_private_mode_pauses_without_naming_the_novel():
+    from vnpresence.config import AppConfig
+    from vnpresence.formatter import DefaultFormatter
+    from vnpresence.models import GameMetadata, GameProfile, PresenceState, PrivacyMode
+
+    payload = DefaultFormatter().format(
+        GameProfile(id="sg", title="Steins;Gate", privacy=PrivacyMode.PRIVATE),
+        GameMetadata(title="Steins;Gate", source="vndb"),
+        PresenceState(paused="Paused", status_text="Ayamine route", playtime_seconds=99999),
+        {"config": AppConfig(), "start": 1_700_000_000},
+    )
+    assert payload["state"] == "Paused"
+    assert "start" not in payload
+    blob = repr(payload)
+    assert "Steins" not in blob and "Ayamine" not in blob and "read" not in blob
+
+
+def test_idle_is_its_own_word():
+    """"Paused" is another window; "Idle" is nobody there at all."""
+    payload = _paused_payload(stopped="Idle")
+    assert payload["details"] == "Idle"
+    assert "start" not in payload
+
+    payload = _paused_payload(stopped="Idle", status_text="Chapter 3")
+    assert payload["details"] == "Chapter 3 (idle)"
+
+
+def test_a_running_clock_is_left_completely_alone():
+    payload = _paused_payload(stopped=None, status_text="Chapter 3")
+    assert payload["details"] == "Chapter 3"
+    assert payload["start"] == 1_700_000_000

@@ -840,6 +840,19 @@ class App(tk.Tk):
             self.status.set("Stopping…")
 
     def _on_event(self, kind: str, message: str) -> None:
+        if kind == "focus":
+            # The one event the reader is actually watching for: whether the
+            # clock is running. It deserves a sentence, not "focus: paused".
+            title = self.session.profile.title if self.session else "the game"
+            if message == "paused":
+                text = "⏸ Paused - you are using another window"
+            elif message == "idle":
+                minutes = int(self.config_data.idle_after // 60)
+                text = f"⏸ Idle - nothing touched for {minutes} minutes"
+            else:
+                text = f"▶ Reading {title}"
+            self._set_status(text)
+            return
         self._set_status(f"{kind}: {message}")
 
     def _set_status(self, text: str) -> None:

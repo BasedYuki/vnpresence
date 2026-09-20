@@ -90,6 +90,17 @@ def foreground_pid() -> int | None:
         from ctypes import wintypes
 
         user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        # Declared on purpose. A window handle is pointer-sized, and ctypes
+        # defaults to a 32-bit int for both the return value and the argument,
+        # which on 64-bit Windows can hand the API a truncated handle. The call
+        # then fails, the pid comes back zero, and "which window is in front"
+        # quietly becomes "no idea" - which reads as "still reading" and is
+        # exactly the bug this function exists to avoid.
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.GetForegroundWindow.argtypes = []
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return None

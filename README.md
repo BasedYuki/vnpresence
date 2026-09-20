@@ -14,7 +14,7 @@ and a link to its VNDB page - the way a normal game does.
 - Auto-detect mode picks up games you start from Steam or a shortcut
 - Adding a game is one line of YAML - or two clicks in the window
 - Type the route or chapter you are on and it shows up straight away
-- Your total reading time, counted only while the game is actually in front
+- Your total reading time, counted only while you are actually in the game
 - Per-game privacy, with a one-switch option to hide 18+ titles
 - A plugin API for anything the defaults do not cover
 - Works with emulated visual novels too - PSP, PS2, PS3, Vita, Switch
@@ -105,6 +105,7 @@ vnpresence rename sg "STEINS;GATE Re:Boot"  # what the presence calls it
 vnpresence search "muv luv"                 # look up VNDB ids
 vnpresence emulators                        # which emulator is running what
 vnpresence window muv-luv BLJM60123         # which title bar means this game
+vnpresence focus muv-luv                    # is it counting my reading right now?
 vnpresence theme kingdom-hearts             # change the window's colours
 vnpresence update                           # is there a newer build? install it
 vnpresence doctor                           # check Discord, VNDB, config, paths
@@ -549,13 +550,84 @@ vnpresence stats
 # Rewrite+     12h 40m  7 sessions  last 2026-09-19
 ```
 
-**Only while you are reading.** Time counts when the game is the window in
-front, the way a time tracker does - alt-tab to a browser for twenty minutes and
-the total does not move. The elapsed timer Discord shows keeps running, because
-every game on Discord counts wall clock and a timer that jumped backwards would
-look broken; it is the recorded total that pauses. Turn it off with
-`focused_time_only: false`. (Windows only: elsewhere there is no way to ask
-which window is in front, so time simply keeps counting.)
+**Only while you are reading.** Time counts while the game is the window you
+are *using* - the focused one, not merely one you can see. Two monitors make
+the difference: a novel sitting open on the left while you type in Discord on
+the right is in plain sight and is not being read, and it does not count. It
+stops again when nothing has been touched for a while, for the evening that
+ends with the novel still open. The whole card follows:
+
+```
+reading                       you are in another window     nobody is there
+┌────────┐  Reading           ┌────────┐  Paused            ┌────────┐  Idle
+│ cover  │  41h 51m read      │ cover  │  41h 51m read      │ cover  │  41h 51m read
+└─────(◍)┘  00:30 elapsed     └─────(◍)┘                    └─────(◍)┘
+```
+
+| | counts | status | why |
+|---|---|---|---|
+| The game has the focus | yes | `Reading` | |
+| Discord, a browser, anything else - on any monitor | no | `Paused` | you are using another window |
+| The game has the focus, nothing touched for 10 min | no | `Idle` | you are not at the machine |
+
+The timer goes away rather than ticking on beside the word - Discord draws that
+timer itself and has no idea you left the room. Come back and it returns,
+counting from the time you have actually read rather than from when the game
+was opened. A route or chapter is kept and marked instead of thrown away:
+`Chapter 3 - Ayamine route (paused)`.
+
+**Idle time is taken back off the total**, not just stopped: the ten minutes
+that passed before VNPresence could tell you had gone are subtracted again, so
+walking away does not quietly buy you the length of the threshold.
+
+```yaml
+# config.yaml
+focused_time_only: true    # false: count whenever the game is open
+idle_after: 600            # seconds with no input; 0 switches it off
+```
+
+Ten minutes, and not the three a work tracker would use, because a voiced
+scene in auto mode can run a long time without a single click. Idle detection
+reads one number from Windows - how long since *any* keyboard or mouse input
+reached the system, whichever program got it. Not what was typed, not where.
+There is nothing to log and nothing is logged.
+
+**Two monitors change nothing**, which is the point. Windows has exactly one
+focused window - [the one "with which the user is currently
+working"](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getforegroundwindow) -
+and no such thing as one per screen. A novel left open on the left monitor
+while you answer a message on the right is visible and unfocused, so it reads
+as `Paused` and does not count. VNPresence never asks whether a window can be
+seen, only whether it is the one being used.
+
+Both are Windows-only: elsewhere there is no way to ask, so nothing is ever
+reported as paused and time simply keeps counting.
+
+**Verifying it yourself.** Everything above rests on two Windows calls that a
+Linux test runner cannot make, so there are two ways to check them for real:
+`tests/test_windows_api.py` runs them on every push (CI builds on
+windows-latest), and
+
+```bash
+python tools/verify_focus.py
+```
+
+runs the whole thing on your own machine - the focused window, the idle clock,
+the handback - and writes a pass/fail report beside itself. Leave the mouse
+alone for the ten seconds it takes; two of the checks are about what happens
+when nobody touches anything.
+
+**When it looks wrong**, watch it decide, one line per second:
+
+```bash
+vnpresence focus muv-luv
+#   pid   8112  idle      4s  Muv-Luv Alternative       -> reading
+#   pid   4300  idle      2s  VNDB - Mozilla Firefox    -> paused
+#   pid   8112  idle    723s  Muv-Luv Alternative       -> idle
+```
+
+A game whose window belongs to a process it started itself still counts -
+the check follows the family, not one pid.
 
 **Already read it for fifty hours?** Nothing can import that. No visual novel
 engine exposes its play time in a portable way - the few that record it keep it
@@ -666,6 +738,8 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | A game shows no cover art | It has no VNDB match. `vnpresence rematch --all`, or **VNDB link…** in the window |
 | A fan translation or remake shows the original's name | VNDB has no separate entry for it. Keep the cover, change the name: `vnpresence rename <game> "..."` |
 | It matched the wrong entry with the same name | Repoint it with `vnpresence link <game> <vndb link>`, or **VNDB link…** in the window. The link is exact; a name is not |
+| The reading total keeps rising while I am in another window | Run `vnpresence focus <game>` and move around: it prints which window has the focus, how long since you touched anything, and what that counts as. If every line says `reading`, check `focused_time_only` in `config.yaml` and that you are on 0.14.0 or newer (`vnpresence --version`) |
+| It says `Idle` while I am reading | You are on a long auto-mode scene, or reading with a controller - neither reaches `GetLastInputInfo`. Raise `idle_after` in `config.yaml`, or set it to `0` |
 | Reading time starts at zero for a game I have played for years | VNPresence only counts what it saw. Seed it once with `vnpresence stats <game> --set 50h`, or **Time read…** in the window |
 | You see the presence but no buttons | Discord does not render buttons on **your own** profile - ask a friend, or check from another account |
 | "requires elevation" / WinError 740 | The game demands administrator rights. VNPresence re-launches it through a UAC prompt - approve it. To stop being asked every time, right-click the .exe → Properties → Compatibility, or run VNPresence as administrator |

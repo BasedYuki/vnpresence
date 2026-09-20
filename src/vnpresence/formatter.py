@@ -9,6 +9,10 @@ Discord's layout, and what we put where::
              01:23 elapsed    <- timestamps.start
              [View on VNDB]   <- buttons
 
+When the reader is working in another window the details line reads "Paused",
+and when nobody has touched anything for a long time it reads "Idle". Either
+way the timestamp is left out entirely, so Discord has no clock to tick.
+
 The cover's tooltip is the game; the corner icon's tooltip names the app, so
 the two do not say the same thing twice.
 
@@ -27,6 +31,13 @@ from .providers.base import PresenceFormatter
 
 MAX_FIELD = 128
 MIN_FIELD = 2
+
+#: What the status line says when the clock is not running. "Paused" is the
+#: reader working in another window - on this monitor or any other; "Idle" is
+#: the novel left in focus with nobody touching anything. The reading total
+#: stops in both, so the card never claims progress nobody is making.
+PAUSED = "Paused"
+IDLE = "Idle"
 
 
 def clamp(text: str | None, limit: int = MAX_FIELD) -> str | None:
@@ -72,19 +83,39 @@ class DefaultFormatter(PresenceFormatter):
         if mode is PrivacyMode.OFF:
             return None
 
+        # A stopped clock gets no running timer. Discord counts the timer up
+        # on its own from this start time and cannot know the reader walked
+        # away, so a timer left in place would tick merrily on next to the
+        # word "Paused" - which looks broken, and is the thing being
+        # complained about. Dropping it and putting it back on resume is the
+        # honest version, and the session moves the anchor forward by the
+        # length of the pause so the number that returns is time read, not
+        # time open.
+        timer = None if state.paused else start
+
         if mode is PrivacyMode.PRIVATE:
             # Nothing that came from the game or the reader goes out here. A
             # route name ("Ayamine route") or a reading total would identify
             # the novel just as surely as its title, which is the one thing
-            # private mode exists to withhold.
-            return {
+            # private mode exists to withhold. "Paused" says nothing about
+            # which novel it is, so it is allowed through.
+            private = {
                 "details": clamp(config.private_title),
-                "state": clamp(config.default_status_text),
-                "start": start,
+                "state": clamp(
+                    _with_pause(
+                        config.default_status_text, state.paused, config.default_status_text
+                    )
+                ),
+                "start": timer,
             }
+            return {k: v for k, v in private.items() if v is not None}
 
         title = profile.title or (metadata.title if metadata else "Visual Novel")
-        status = state.status_text or profile.status_text or config.default_status_text
+        status = _with_pause(
+            state.status_text or profile.status_text or config.default_status_text,
+            state.paused,
+            config.default_status_text,
+        )
 
         read_for = format_reading_time(state.playtime_seconds)
 
@@ -96,7 +127,7 @@ class DefaultFormatter(PresenceFormatter):
                 "name": clamp(title),
                 "details": clamp(status),
                 "state": clamp(_join(_subtitle(metadata) if metadata else None, read_for)),
-                "start": start,
+                "start": timer,
             }
         else:
             # Older clients ignore `name` and print the application's name, so
@@ -106,7 +137,7 @@ class DefaultFormatter(PresenceFormatter):
             payload = {
                 "details": clamp(title),
                 "state": clamp(_join(status, read_for)),
-                "start": start,
+                "start": timer,
             }
 
         large_image = profile.image_url or (metadata.image_url if metadata else None)
@@ -134,6 +165,24 @@ class DefaultFormatter(PresenceFormatter):
             payload["buttons"] = [{"label": "View on VNDB", "url": metadata.url}]
 
         return {k: v for k, v in payload.items() if v is not None}
+
+
+def _with_pause(status: str | None, stopped: str | None, default: str | None) -> str | None:
+    """The status line, marked with why the clock stopped - or left alone.
+
+    A plain "Reading" becomes "Paused" or "Idle" outright - they are answers to
+    the same question. Anything more specific is kept and marked, because
+    "Chapter 3 - Ayamine route" is where the reader is whether or not they are
+    looking at it, and throwing it away for the length of a coffee break would
+    be a strange thing to do to a status line.
+    """
+    if not stopped:
+        return status
+    if not status or status.strip().casefold() == (default or "").strip().casefold():
+        return stopped
+    suffix = f" ({stopped.casefold()})"
+    trimmed = clamp(status, MAX_FIELD - len(suffix))
+    return f"{trimmed}{suffix}" if trimmed else stopped
 
 
 def _join(*parts: str | None) -> str | None:

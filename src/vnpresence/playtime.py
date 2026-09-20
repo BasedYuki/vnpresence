@@ -105,11 +105,18 @@ class Playtime:
 
     # -- writing ----------------------------------------------------------
     def add(self, game_id: str, seconds: float, *, new_session: bool = False) -> Entry:
-        """Add time to a game. Never raises - this must not end a session."""
-        seconds = max(float(seconds), 0.0)
+        """Add time to a game. Never raises - this must not end a session.
+
+        A negative amount takes time back off, which is not an oddity but a
+        requirement: idle time is only ever recognised after it has already
+        been written down, and a total that can only go up would keep every
+        minute of every evening the reader walked away from. The total itself
+        never goes below zero.
+        """
+        seconds = float(seconds)
         entries = self.load()
         entry = entries.get(game_id, Entry())
-        entry.seconds += seconds
+        entry.seconds = max(entry.seconds + seconds, 0.0)
         if new_session:
             entry.sessions += 1
         entry.last_played = time.strftime("%Y-%m-%dT%H:%M:%S")

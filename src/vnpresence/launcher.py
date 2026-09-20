@@ -59,6 +59,38 @@ class TrackedGame:
             return False
 
 
+#: How far up the parent chain :func:`belongs_to` will look. Deep enough for a
+#: game that puts its window in a child process, short enough that it can never
+#: wander up to explorer.exe and call the whole desktop part of the game.
+MAX_ANCESTRY = 4
+
+
+def belongs_to(pid: int | None, owner: int | None, *, depth: int = MAX_ANCESTRY) -> bool:
+    """Is ``pid`` the game ``owner`` - or a process the game started?
+
+    Asked of the window in front. A fair number of games are one process with
+    one window, but plenty are not: an engine that spawns a renderer, a browser
+    -based novel in its own child process, an emulator that opens its display
+    separately. Comparing pids alone calls all of those "not the game", and
+    then stops counting reading time while the reader is reading.
+    """
+    if pid is None or owner is None:
+        return False
+    if pid == owner:
+        return True
+    try:
+        process = psutil.Process(pid)
+        for _ in range(depth):
+            process = process.parent()
+            if process is None:
+                return False
+            if process.pid == owner:
+                return True
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+    return False
+
+
 #: Windows: CreateProcess cannot elevate, so a game whose manifest asks for
 #: administrator rights fails with this error until we go through the shell.
 ERROR_ELEVATION_REQUIRED = 740

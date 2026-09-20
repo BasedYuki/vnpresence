@@ -117,3 +117,39 @@ def test_uac_launch_waits_longer_for_the_prompt(monkeypatch):
     )
     assert tracked is not None
     assert tracked.pid == 42
+
+
+# -- whose window is that? -------------------------------------------------
+def test_belongs_to_matches_the_process_itself():
+    import os
+
+    from vnpresence.launcher import belongs_to
+
+    assert belongs_to(os.getpid(), os.getpid()) is True
+    assert belongs_to(None, os.getpid()) is False
+    assert belongs_to(os.getpid(), None) is False
+
+
+def test_belongs_to_follows_the_parent_chain():
+    """A game's window often belongs to a process the game started."""
+    import os
+
+    from vnpresence.launcher import belongs_to
+
+    parent = os.getppid()
+    assert belongs_to(os.getpid(), parent) is True
+
+
+def test_belongs_to_gives_up_rather_than_walking_to_the_desktop():
+    """Bounded on purpose: enough ancestry stops being 'the game'."""
+    import os
+
+    from vnpresence.launcher import belongs_to
+
+    assert belongs_to(os.getpid(), os.getppid(), depth=0) is False
+
+
+def test_belongs_to_survives_a_process_that_just_died():
+    from vnpresence.launcher import belongs_to
+
+    assert belongs_to(2**22 - 1, 1) is False

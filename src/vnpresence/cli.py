@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from pathlib import Path
 
 import click
@@ -14,7 +15,8 @@ from .emulators import EMULATORS as EMULATOR_LABELS
 from .emulators import is_emulator
 from .emulators import label as emulator_label
 from .emulators import running as running_emulators
-from .launcher import LaunchError, _split_path
+from .idle import idle_seconds
+from .launcher import LaunchError, _split_path, belongs_to, find_running
 from .library import Library
 from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
 from .notes import clear_note, read_note, write_note
@@ -23,6 +25,8 @@ from .plugins import build_registry
 from .session import GameSession, format_duration
 from .theme import PALETTES
 from .theme import get as get_theme
+from .titlebar import foreground_pid, titles_for
+from .titlebar import supported as titlebar_supported
 from .titles import guess_title
 from .update import UpdateError, check, install, skip_version
 from .vndb import VNDBClient, VNDBError
@@ -536,6 +540,68 @@ def window(game: str, text: tuple[str, ...], clear: bool) -> None:
     library.save(profile)
     click.secho(f"\u2713 {profile.title} matches windows containing "
                 f"{profile.window_match!r}", fg="green")
+
+
+@main.command("focus")
+@click.argument("game", required=False)
+@click.option("--seconds", default=20, show_default=True, help="How long to watch for.")
+def focus_command(game: str | None, seconds: int) -> None:
+    """Show what VNPresence thinks you are doing, second by second.
+
+    Reading time counts only while the game is the window you are using - not
+    merely a window you can see - and stops again when nothing has been touched
+    for a while. When that looks wrong this is the thing to run: start the
+    game, run this, and move around. Every line says which window has the
+    focus, how long since you last touched anything, and what that adds up to.
+    """
+    if not titlebar_supported():
+        raise click.ClickException(
+            "reading the focused window needs Windows; everywhere else "
+            "VNPresence keeps counting rather than guess wrong"
+        )
+    config = AppConfig.load()
+    if not config.focused_time_only:
+        click.secho(
+            "focused_time_only is off in config.yaml, so reading time counts "
+            "whichever window you are using.",
+            fg="yellow",
+        )
+    library = Library()
+    profile = library.find(game) if game else None
+    if game and profile is None:
+        raise click.ClickException(f"no game matches {game!r} (try: vnpresence list)")
+
+    tracked = find_running(profile) if profile else None
+    if profile and tracked is None:
+        raise click.ClickException(
+            f"{profile.title} does not seem to be running - start it first"
+        )
+    if tracked:
+        click.secho(f"tracking {tracked.name} (pid {tracked.pid})", fg="cyan")
+    else:
+        click.secho("no game given: just showing the focused window", fg="cyan")
+    if config.idle_after and config.idle_after > 0:
+        click.secho(f"idle after {format_duration(config.idle_after)} of no input", fg="cyan")
+    else:
+        click.secho("idle detection is off (idle_after: 0)", fg="cyan")
+    click.echo("")
+
+    for _ in range(max(seconds, 1)):
+        pid = foreground_pid()
+        titles = titles_for(pid) if pid else []
+        name = (titles[0] if titles else "(no title)")[:48]
+        quiet = idle_seconds()
+        quiet_text = "   -   " if quiet is None else f"{int(quiet)}s".rjust(7)
+        line = f"  pid {str(pid or '?').rjust(6)}  idle {quiet_text}  {name}"
+        if tracked is None:
+            click.echo(line)
+        elif not belongs_to(pid, tracked.pid):
+            click.secho(f"{line}  -> paused", fg="yellow")
+        elif config.idle_after and quiet is not None and quiet >= config.idle_after:
+            click.secho(f"{line}  -> idle", fg="yellow")
+        else:
+            click.secho(f"{line}  -> reading", fg="green")
+        time.sleep(1.0)
 
 
 @main.command("theme")

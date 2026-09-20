@@ -203,6 +203,12 @@ class PresenceState:
     status_text: str | None = None
     small_text: str | None = None
     small_image: str | None = None
+    #: The game is running but nobody is reading it, and the word for why:
+    #: "Paused" when it is not the window being used, "Idle" when it is but
+    #: nothing has been touched in a long time. ``None`` means the clock is
+    #: running. The word goes on the card as-is, so the presence says what is
+    #: actually happening instead of claiming reading that is not.
+    paused: str | None = None
     #: Total time this game has been read, in seconds, across every session.
     #: The session fills this in from the history it keeps; a plugin with a
     #: better figure - one the game itself reports - can set it directly.

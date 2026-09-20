@@ -240,3 +240,74 @@ def test_no_pattern_means_no_window_lookup(tmp_path, monkeypatch):
     session = make_session(tmp_path)
     session._tracked_pid = 4242
     assert session.chapter_from_title() is None
+
+
+# -- pausing when the reader looks away ------------------------------------
+def test_focus_is_three_answers_not_two(tmp_path, monkeypatch):
+    """"Cannot tell" has to be its own answer, or Linux would pause forever."""
+    session = make_session(tmp_path)
+    session._tracked_pid = 4242
+
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: None)
+    assert session.look_at_focus() is None  # not Windows, or the call failed
+    assert session.is_focused() is True  # ...so the clock keeps running
+
+    session.config.focused_time_only = False
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: 999)
+    assert session.look_at_focus() is None  # the feature is switched off
+
+
+def test_a_window_owned_by_a_child_process_still_counts(tmp_path, monkeypatch):
+    """Plenty of games put their window in a process they started themselves."""
+    session = make_session(tmp_path)
+    session._tracked_pid = 4242
+
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: 5555)
+    monkeypatch.setattr(
+        "vnpresence.session.belongs_to",
+        lambda pid, owner, **kw: (pid, owner) == (5555, 4242),
+    )
+    assert session.look_at_focus() is True
+    session._tick(2.0)
+    assert session.read_seconds == 2.0
+
+
+def test_the_presence_says_paused_and_drops_the_timer(tmp_path, monkeypatch):
+    session = make_session(tmp_path)
+    session._tracked_pid = 4242
+    session._timer_start = session.start_time
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: 999)
+
+    session._tick(2.0)
+    payload = session.build_payload(PresenceState())
+    assert payload["details"] == "Paused"
+    assert "start" not in payload  # no clock ticking next to the word "Paused"
+
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: 4242)
+    session._tick(2.0)
+    payload = session.build_payload(PresenceState())
+    assert payload["details"] == "Reading"
+    assert "start" in payload
+
+
+def test_a_note_survives_the_pause_and_is_marked(tmp_path, monkeypatch):
+    session = make_session(tmp_path)
+    session._tracked_pid = 4242
+    notes.write_note("sg", "Chapter 3 - Ayamine route")
+    monkeypatch.setattr("vnpresence.session.foreground_pid", lambda: 999)
+
+    session._tick(2.0)
+    payload = session.build_payload(PresenceState())
+    assert payload["details"] == "Chapter 3 - Ayamine route (paused)"
+
+
+def test_the_timer_is_re_anchored_to_the_reading_time(tmp_path):
+    """After a pause the timer shows time read, not time the game was open."""
+    session = make_session(tmp_path)
+    session.start_time = time.time() - 3600  # open for an hour
+    session._timer_start = session.start_time
+    session.read_seconds = 600  # of which ten minutes were actually read
+
+    session._resume_timer()
+    shown = time.time() - session._timer_start
+    assert 599 <= shown <= 601

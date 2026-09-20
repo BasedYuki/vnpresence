@@ -100,10 +100,24 @@ class AppConfig:
     watch_interval: float = 5.0
     #: Treat 18+ titles as private when a game's privacy is "auto".
     nsfw_auto_private: bool = True
-    #: Count reading time only while the game is the window in front, the way
-    #: a time tracker does. Alt-tab to a browser and the total stops. Windows
-    #: only: everywhere else there is no way to ask, so time keeps counting.
+    #: Count reading time only while the game is the window you are actually
+    #: using - the focused one, not merely a visible one. Click Discord on a
+    #: second monitor and the total stops even though the novel is still on
+    #: screen; the status line reads "Paused" and Discord's timer is taken
+    #: away rather than left ticking beside it. Windows only: everywhere else
+    #: there is no way to ask, so nothing is reported as paused and time keeps
+    #: counting.
     focused_time_only: bool = True
+    #: Also stop after this many seconds with no keyboard or mouse input at
+    #: all, for the evening that ends with the novel still open. The time
+    #: already counted during the idle stretch is taken back off the total,
+    #: so walking away at 21:00 does not buy an hour of reading.
+    #:
+    #: Ten minutes by default because visual novels are not spreadsheets: a
+    #: voiced scene in auto mode can run a long time without a single click.
+    #: Set it to 0 to switch idle detection off and go by the focused window
+    #: alone. Windows only.
+    idle_after: float = 600.0
     #: Window colours: "midnight", "daylight" or "kingdom-hearts".
     theme: str = "midnight"
     #: Ask GitHub once a day whether a newer VNPresence has been released.
