@@ -121,3 +121,27 @@ def test_the_details_page_lists_what_is_known_and_skips_what_is_not():
     assert lines["Time played"] == "Not yet"
     assert lines["Last played"] == "Never"
     assert "Length" not in lines  # nothing invented when VNDB had nothing
+
+
+# -- open on VNDB ---------------------------------------------------------
+def test_a_linked_game_opens_its_own_vndb_page():
+    from vnpresence.library_view import vndb_page
+
+    assert vndb_page(GameProfile(id="sg", title="STEINS;GATE", vndb_id="v2002")) == (
+        "https://vndb.org/v2002", True)
+
+
+def test_an_unlinked_game_opens_a_vndb_search_for_its_name():
+    """Never a dead end: the search is one click from the right entry."""
+    from vnpresence.library_view import vndb_page
+
+    url, linked = vndb_page(GameProfile(id="sg", title="STEINS;GATE"))
+    assert linked is False
+    assert url == "https://vndb.org/v?q=STEINS%3BGATE"
+
+
+def test_a_mangled_vndb_id_falls_back_to_the_search():
+    from vnpresence.library_view import vndb_page
+
+    url, linked = vndb_page(GameProfile(id="x", title="Rewrite", vndb_id="garbage"))
+    assert (url, linked) == ("https://vndb.org/v?q=Rewrite", False)

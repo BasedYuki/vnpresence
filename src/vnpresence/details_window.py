@@ -13,7 +13,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from . import covers, screenshots
-from .library_view import card_for, details_lines
+from .library_view import card_for, details_lines, vndb_page
 from .notes import read_note
 from .playtime import Playtime
 from .vndb import VNDBClient
@@ -87,9 +87,9 @@ class DetailsWindow(tk.Toplevel):
                    command=self._play).pack(side="left")
         ttk.Button(buttons, text="Screenshots folder",
                    command=self._open_folder).pack(side="left", padx=8)
-        if metadata is not None and metadata.url:
-            ttk.Button(buttons, text="VNDB page",
-                       command=lambda: _open_url(metadata.url)).pack(side="left")
+        url, linked = vndb_page(profile)
+        ttk.Button(buttons, text="Open on VNDB" if linked else "Search on VNDB",
+                   command=lambda: _open_url(url)).pack(side="left")
 
         hotkey = (app.config_data.screenshot_hotkey or "").strip()
         if hotkey:
@@ -199,7 +199,6 @@ def _open_file(path) -> None:
 
 
 def _open_url(url: str) -> None:
-    import webbrowser
+    from .gui import open_url
 
-    with contextlib.suppress(Exception):
-        webbrowser.open(url)
+    open_url(url)

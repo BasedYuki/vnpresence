@@ -191,6 +191,9 @@ dragged it to.
 - **Details…** (or `Ctrl+I`, or right-click a game) opens a page for that one
   novel: the big cover, everything above, its length and rating from VNDB, the
   route you are on, and its screenshots.
+- **Open on VNDB** (right-click a game, or `Ctrl+O`) opens its VNDB page in
+  your browser - handy for logging it in your VNDB list. A game that is not
+  linked yet opens a VNDB search for its name instead.
 - **One primary button.** Play is the only coloured one; everything else is quiet.
 - **Type to filter** - by name or by id. `Ctrl+F` jumps to the box, `F5` refreshes.
 - **Enter** or a **double-click** plays, **Delete** removes, **right-click** for

@@ -10,13 +10,15 @@ from __future__ import annotations
 
 import datetime as _dt
 from dataclasses import dataclass
+from urllib.parse import quote_plus
 
 from .config import AppConfig
 from .formatter import effective_privacy
-from .models import GameMetadata, GameProfile, PrivacyMode
+from .models import GameMetadata, GameProfile, PrivacyMode, normalise_vndb_id
 from .playtime import Entry, format_reading_time
 
 NEVER = "Never"
+VNDB = "https://vndb.org"
 
 
 def _parse(stamp: str | None) -> _dt.datetime | None:
@@ -128,3 +130,17 @@ def details_lines(card: Card) -> list[tuple[str, str]]:
         if meta.rating:
             lines.append(("VNDB rating", f"{meta.rating} / 10"))
     return lines
+
+
+def vndb_page(profile: GameProfile) -> tuple[str, bool]:
+    """Where "Open on VNDB" goes, and whether it is the game's own page.
+
+    A linked game opens its entry, ready to log; an unlinked one opens a VNDB
+    search for its name, so the menu item is never a dead end.
+    """
+    if profile.vndb_id:
+        try:
+            return f"{VNDB}/{normalise_vndb_id(profile.vndb_id)}", True
+        except ValueError:
+            pass
+    return f"{VNDB}/v?q={quote_plus(profile.title or profile.id)}", False

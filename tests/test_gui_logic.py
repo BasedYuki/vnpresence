@@ -795,3 +795,28 @@ def test_a_fresh_install_opens_maximized():
     assert AppConfig().start_maximized is True
     assert AppConfig().library_view == "list"
     assert AppConfig().screenshot_hotkey == "F8"
+
+
+def test_open_on_vndb_opens_the_linked_page(app, monkeypatch):
+    opened = []
+    monkeypatch.setattr(gui, "open_url", opened.append)
+    profile = app.library.get("x")
+    profile.vndb_id = "v2002"
+    app.library.save(profile)
+    app.open_vndb_page()
+    assert opened == ["https://vndb.org/v2002"]
+    assert "Opened" in app.status.get()
+
+
+def test_open_on_vndb_searches_when_the_game_is_not_linked(app, monkeypatch):
+    opened = []
+    monkeypatch.setattr(gui, "open_url", opened.append)
+    app.open_vndb_page()
+    assert opened == ["https://vndb.org/v?q=X"]
+    assert "not linked" in app.status.get()
+
+
+def test_open_on_vndb_with_nothing_selected_does_nothing(app, monkeypatch):
+    monkeypatch.setattr(gui, "open_url", lambda url: pytest.fail("nothing to open"))
+    app.tree = Selection()
+    app.open_vndb_page()

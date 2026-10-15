@@ -31,7 +31,7 @@ from .emulators import label as emulator_label
 from .emulators import running as running_emulators
 from .launcher import LaunchError
 from .library import Library
-from .library_view import Card, card_for, last_played_key, row_values
+from .library_view import Card, card_for, last_played_key, row_values, vndb_page
 from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
 from .notes import read_note, write_note
 from .playtime import Playtime, format_reading_time, parse_duration
@@ -92,6 +92,16 @@ def open_path(path) -> None:
             subprocess.Popen(["xdg-open", str(path)])  # noqa: S603, S607
     except Exception:
         log.debug("could not open %s", path, exc_info=True)
+
+
+def open_url(url: str) -> None:
+    """A web page in the default browser; quietly nothing if there is none."""
+    import webbrowser
+
+    try:
+        webbrowser.open(url)
+    except Exception:
+        log.debug("could not open %s", url, exc_info=True)
 
 
 def _first_lines(notes: str, limit: int = 8) -> str:
@@ -308,6 +318,7 @@ class App(tk.Tk):
         self.bind("<F5>", lambda _e: self.refresh())
         self.bind("<Control-i>", lambda _e: self.open_details())
         self.bind("<Control-g>", lambda _e: self.toggle_view())
+        self.bind("<Control-o>", lambda _e: self.open_vndb_page())
         self._show_view()
         self.on_select()
 
@@ -577,6 +588,10 @@ class App(tk.Tk):
         menu.add_command(label="▶  Play", command=self.play_selected)
         menu.add_command(label="Details…", command=self.open_details)
         menu.add_command(label="Screenshots folder", command=self.open_gallery)
+        profile = self.selected_profile()
+        linked = profile is not None and vndb_page(profile)[1]
+        menu.add_command(label="Open on VNDB" if linked else "Search on VNDB",
+                         command=self.open_vndb_page)
         menu.add_separator()
         menu.add_command(label="Rename…", command=self.rename_selected)
         menu.add_command(label="VNDB link…", command=self.relink_selected)
@@ -595,6 +610,16 @@ class App(tk.Tk):
             with contextlib.suppress(Exception):
                 self._details.destroy()
         self._details = DetailsWindow(self, profile)
+
+    def open_vndb_page(self) -> None:
+        """The game's VNDB entry in the browser - for logging it there."""
+        profile = self.selected_profile()
+        if profile is None:
+            return
+        url, linked = vndb_page(profile)
+        open_url(url)
+        self.status.set(f"Opened {profile.title} on VNDB" if linked else
+                        f"{profile.title} is not linked to VNDB yet - searched for it there")
 
     def open_gallery(self) -> None:
         profile = self.selected_profile()
