@@ -74,6 +74,22 @@ class VNDBClient:
         self._write_cache(vndb_id, metadata.to_dict())
         return metadata
 
+    def peek(self, vndb_id: str) -> GameMetadata | None:
+        """What the cache says, however old, without going near the network.
+
+        For drawing the library: a cover from a month ago is a perfectly good
+        cover, and a window that waited on VNDB before it could show a grid
+        would be a window that sometimes shows nothing at all.
+        """
+        try:
+            path = self._cache_file(normalise_vndb_id(vndb_id))
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not isinstance(data, dict) or data.get("_schema") != CACHE_SCHEMA:
+            return None
+        return GameMetadata.from_dict(data)
+
     def search(self, term: str, limit: int = 10) -> list[GameMetadata]:
         results = self._query(
             {

@@ -199,4 +199,28 @@ def apply(root, name: str | None = None):  # pragma: no cover - needs a real Tk
     style.configure("Vertical.TScrollbar", background=palette.surface,
                     troughcolor=palette.background, arrowcolor=palette.muted,
                     bordercolor=palette.background)
+
+    # The cover grid: a tile is the surface colour, the chosen one the accent,
+    # the same way the list marks its selected row.
+    style.configure("Tile.TFrame", background=palette.background)
+    style.configure("TileSelected.TFrame", background=palette.accent)
+    style.configure("Tile.TLabel", background=palette.background, foreground=palette.text)
+    style.configure("TileSelected.TLabel", background=palette.accent,
+                    foreground=palette.accent_text)
+    style.configure("TileMuted.TLabel", background=palette.background,
+                    foreground=palette.muted)
+    style.configure("TileSelectedMuted.TLabel", background=palette.accent,
+                    foreground=palette.accent_text)
+
+    # List / grid switch: two buttons, the current view lit.
+    # A radio button drawn as a toggle: ttk's own "Toolbutton" layout.
+    style.configure("View.Toolbutton", background=palette.surface,
+                    foreground=palette.text, padding=(10, 5), relief="flat")
+    style.map("View.Toolbutton",
+              background=[("selected", palette.accent), ("active", palette.hover)],
+              foreground=[("selected", palette.accent_text)])
+
+    # Details page.
+    style.configure("Title.TLabel", foreground=palette.text, font=("Segoe UI", 16, "bold"))
+    style.configure("Fact.TLabel", foreground=palette.muted)
     return palette

@@ -25,6 +25,7 @@ from .notes import read_note
 from .playtime import Playtime
 from .plugins import PluginRegistry, build_registry
 from .presence import DiscordPresence
+from .screenshots import Hotkey, HotkeyError, capture
 from .titlebar import foreground_pid, titles_for
 
 log = logging.getLogger(__name__)
@@ -339,6 +340,8 @@ class GameSession:
         self.presence.update(payload, force=True)
         notify("presence", "activity published" if payload else "activity hidden")
 
+        hotkey = self._start_screenshot_hotkey(notify)
+
         last_update = time.time()
         last_record = time.time()
         try:
@@ -385,6 +388,8 @@ class GameSession:
                     state_provider.stop()
                 except Exception:
                     log.exception("state plugin failed to stop")
+            if hotkey is not None:
+                hotkey.stop()
             self._record_playtime(final=True)
             self.presence.close()
 
@@ -402,6 +407,53 @@ class GameSession:
 
     def stop(self) -> None:
         self._stop = True
+
+    # -- screenshots ------------------------------------------------------
+    def game_pids(self) -> set[int]:
+        """The tracked process and everything it started.
+
+        A game's window is not always owned by the process we follow - an
+        engine that renders in a child, an emulator that opens its display
+        separately - so the search for "the game's window" covers the family.
+        """
+        if self._tracked_pid is None:
+            return set()
+        pids = {self._tracked_pid}
+        try:
+            import psutil
+
+            pids |= {c.pid for c in psutil.Process(self._tracked_pid).children(recursive=True)}
+        except Exception:
+            pass
+        return pids
+
+    def take_screenshot(self):
+        """Save the game's window into its gallery. Returns the file or None."""
+        return capture(self.profile.id, self.game_pids())
+
+    def _start_screenshot_hotkey(self, notify):
+        """Claim the screenshot key for exactly as long as the game runs."""
+        key = (self.config.screenshot_hotkey or "").strip()
+        if not key:
+            return None
+        try:
+            hotkey = Hotkey(key, lambda: self._on_screenshot_key(notify))
+        except HotkeyError as exc:
+            notify("warning", f"screenshot hotkey: {exc}")
+            return None
+        if not hotkey.start():
+            if hotkey.error and "Windows" not in hotkey.error:
+                notify("warning", f"screenshot hotkey: {hotkey.error}")
+            return None
+        notify("screenshot", f"press {key} to save a screenshot of the game")
+        return hotkey
+
+    def _on_screenshot_key(self, notify) -> None:
+        saved = self.take_screenshot()
+        if saved is None:
+            notify("screenshot", "nothing saved - the game's window is not on screen")
+        else:
+            notify("screenshot", f"saved {saved.name}")
 
     # -- internals --------------------------------------------------------
     def _start_game(self, *, attach: bool) -> TrackedGame:

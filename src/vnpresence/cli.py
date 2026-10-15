@@ -630,6 +630,83 @@ def focus_command(game: str | None, seconds: int) -> None:
         time.sleep(1.0)
 
 
+@main.command("screenshots")
+@click.argument("game")
+@click.option("--open", "open_folder", is_flag=True, help="Open the folder as well.")
+def screenshots_command(game: str, open_folder: bool) -> None:
+    """Show where a game's screenshots are, and how many there are.
+
+    They are taken with the screenshot key (F8 unless you changed it) while
+    the game is running.
+    """
+    from . import screenshots as shots_module
+
+    profile = Library().find(game)
+    if profile is None:
+        raise click.ClickException(f"no game matches {game!r} (try: vnpresence list)")
+    folder = shots_module.gallery_dir(profile.id)
+    found = shots_module.shots(profile.id)
+    click.echo(f"{profile.title}: {len(found)} screenshot(s)")
+    click.echo(f"  {folder}")
+    for path in found[:5]:
+        click.echo(f"  - {path.name}")
+    if len(found) > 5:
+        click.echo(f"  ... and {len(found) - 5} more")
+    key = (AppConfig.load().screenshot_hotkey or "").strip()
+    if key:
+        click.echo(f"\nPress {key} while the game is running to add one.")
+    if open_folder:
+        folder.mkdir(parents=True, exist_ok=True)
+        from .gui import open_path
+
+        open_path(folder)
+
+
+@main.command("selfcheck", hidden=True)
+def selfcheck() -> None:
+    """Prove a frozen build carries what the window needs. Used by the release."""
+    problems = []
+    try:
+        from PIL import Image, ImageDraw, ImageFont, ImageGrab, ImageOps  # noqa: F401
+
+        from . import covers
+
+        if covers.tile(None, (150, 213), title="selfcheck").size != (150, 213):
+            problems.append("covers.tile drew the wrong size")
+    except Exception as exc:  # pragma: no cover - only a broken build gets here
+        problems.append(f"Pillow: {exc}")
+    # Importing ImageTk proves nothing: in a frozen build it imports fine and
+    # then fails the first time it is asked to draw, which a broad except in
+    # the window turns into a grid of blank tiles. So draw one.
+    try:
+        import tkinter
+
+        from PIL import Image, ImageTk
+
+        try:
+            root = tkinter.Tk()
+        except tkinter.TclError:
+            root = None  # no display at all (a headless runner): nothing to draw on
+        if root is not None:
+            try:
+                root.withdraw()
+                photo = ImageTk.PhotoImage(Image.new("RGB", (4, 4), "red"), master=root)
+                if photo.width() != 4:
+                    problems.append("Tk images: drew the wrong size")
+            finally:
+                root.destroy()
+            click.echo("selfcheck: drew a Tk image")
+    except Exception as exc:  # pragma: no cover
+        problems.append(f"Tk images: {type(exc).__name__}: {exc}")
+    try:
+        from . import details_window, library_view, screenshots  # noqa: F401
+    except Exception as exc:  # pragma: no cover
+        problems.append(f"modules: {exc}")
+    if problems:
+        raise click.ClickException("; ".join(problems))
+    click.echo("selfcheck: ok")
+
+
 @main.command("theme")
 @click.argument("name", required=False)
 def theme_command(name: str | None) -> None:

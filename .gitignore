@@ -16,3 +16,5 @@ assets/icon-generated.ico
 verify_focus_report.txt
 .verify-playtime.yaml
 Claude outputs/
+verify_screenshots_report.txt
+.verify-screenshots-home/

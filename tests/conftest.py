@@ -24,6 +24,9 @@ def no_network(monkeypatch):
     # Patched at the HTTP call, not at the client: tests that hand VNDBClient a
     # fake session are exercising the real parsing code and must keep working.
     monkeypatch.setattr("vnpresence.vndb.requests.post", refuse)
+    # Covers too: a grid test that quietly downloaded real JPEGs would pass
+    # offline-by-accident and fail on the next CI runner without network.
+    monkeypatch.setattr("vnpresence.covers.requests.get", refuse)
 
 
 @pytest.fixture(autouse=True)

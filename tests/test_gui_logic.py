@@ -545,20 +545,28 @@ def test_the_filter_matches_name_and_id():
 
 
 def test_a_row_shows_what_you_look_a_game_up_by():
+    from vnpresence.playtime import Entry
+
     profile = _profile("sg", "STEINS;GATE", vndb_id="v2002")
-    title, read, privacy, vndb = gui.row_values(profile, 12 * 3600 + 40 * 60)
+    entry = Entry(seconds=12 * 3600 + 40 * 60, sessions=7, last_played="")
+    title, played, last, sessions, privacy, vndb = gui.row_values(profile, entry)
     assert title == "STEINS;GATE"
-    assert read == "12h 40m"     # the column header already says "Time read"
+    assert played == "12h 40m"   # the column header already says "Time played"
+    assert sessions == "7"
+    assert last == "Never"
     assert vndb == "v2002"
     assert privacy == "auto"
 
 
 def test_a_game_never_read_shows_a_dash_not_a_zero():
-    assert gui.row_values(_profile("x", "X"), 0.0)[1] == "-"
+    row = gui.row_values(_profile("x", "X"), None)
+    assert row[1] == "-"   # time
+    assert row[3] == "-"   # sessions
+    assert row[2] == "Never"
 
 
 def test_a_game_with_no_vndb_match_is_visible_as_such():
-    assert gui.row_values(_profile("x", "X"), 0.0)[3] == "-"
+    assert gui.row_values(_profile("x", "X"), None)[5] == "-"
 
 
 def test_filtering_narrows_the_list(app):
@@ -708,3 +716,82 @@ def test_the_list_is_refreshed_even_when_the_session_crashed(app):
     app._run_session()
     assert calls["after"] == [(0, app.refresh)]
     assert "exploded" in calls["status"]
+
+
+# -- the new columns sort the way the column means ------------------------
+def test_sorting_by_last_played_puts_the_most_recent_first(app):
+    from vnpresence.playtime import Playtime
+
+    app.library.save(_profile("a", "Air"))
+    app.library.save(_profile("b", "Baldr Sky"))
+    history = Playtime()
+    history.add("a", 60)
+    history.add("b", 60)                       # played just now
+    entries = history.load()
+    entries["a"].last_played = "2026-01-01T10:00:00"  # played months ago
+    history._save(entries)
+    app.filter_var = Box("")
+    app.sort_column, app.sort_reverse = "last", False
+    assert [p.id for p in app.visible_profiles()][:2] == ["b", "a"]  # x: never, last
+
+
+def test_sorting_by_sessions_puts_the_most_returned_to_first(app):
+    from vnpresence.playtime import Playtime
+
+    app.library.save(_profile("a", "Air"))
+    history = Playtime()
+    for _ in range(5):
+        history.add("a", 10, new_session=True)
+    history.add("x", 10, new_session=True)
+    app.filter_var = Box("")
+    app.sort_column, app.sort_reverse = "sessions", False
+    assert [p.id for p in app.visible_profiles()] == ["a", "x"]
+
+
+# -- list or grid ---------------------------------------------------------
+def test_the_chosen_view_is_remembered(app, monkeypatch):
+    from vnpresence.config import AppConfig
+
+    app.config_data = AppConfig()
+    app.view_var = Box("grid")
+    app._show_view = lambda: None
+    app.refresh = lambda: None
+    app.set_view()
+    assert AppConfig.load().library_view == "grid"
+
+
+def test_ctrl_g_flips_between_the_two(app):
+    from vnpresence.config import AppConfig
+
+    app.config_data = AppConfig()
+    app.view_var = Box("list")
+    app._show_view = lambda: None
+    app.refresh = lambda: None
+    app.toggle_view()
+    assert app.view_var.get() == "grid"
+    app.toggle_view()
+    assert app.view_var.get() == "list"
+
+
+def test_the_window_remembers_how_it_was_left(app):
+    from vnpresence.config import AppConfig
+
+    app.config_data = AppConfig()
+    app._is_maximized = lambda: False
+    app.geometry = lambda: "1100x700+40+40"
+    app._remember_window()
+    saved = AppConfig.load()
+    assert saved.start_maximized is False
+    assert saved.window_geometry == "1100x700+40+40"
+
+    app._is_maximized = lambda: True
+    app._remember_window()
+    assert AppConfig.load().start_maximized is True
+
+
+def test_a_fresh_install_opens_maximized():
+    from vnpresence.config import AppConfig
+
+    assert AppConfig().start_maximized is True
+    assert AppConfig().library_view == "list"
+    assert AppConfig().screenshot_hotkey == "F8"

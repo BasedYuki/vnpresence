@@ -24,13 +24,14 @@ dependencies = [
     "PyYAML>=6.0",
     "requests>=2.28",
     "click>=8.1",
+    "pillow>=10.1",
 ]
 
 [project.optional-dependencies]
 # pillow is only used by tools/make_icon.py, but tests/test_make_icon.py imports
 # that script to prove it never overwrites the project's real icons - so the
 # guard is only actually verified on a machine that has it.
-dev = ["pytest>=7.4", "ruff>=0.5", "pyinstaller>=6.0", "pillow>=10"]
+dev = ["pytest>=7.4", "ruff>=0.5", "pyinstaller>=6.0"]
 
 [project.urls]
 Homepage = "https://github.com/BasedYuki/vnpresence"

@@ -23,11 +23,16 @@ jobs:
 
       # tools/entry.py, never src/vnpresence/__main__.py: a frozen entry script
       # runs standalone, so relative imports inside the package would break it.
+      #
+      # PIL._tkinter_finder by hand: PyInstaller's Pillow hook leaves Pillow's
+      # Tk bridge out, the .exe imports ImageTk happily, and then every cover
+      # in the grid comes out blank. `selfcheck` below draws one to be sure.
       - name: Build VNPresence.exe (windowed)
         run: >
           pyinstaller --onefile --windowed --name VNPresence
           --icon assets/icon.ico
           --paths src --collect-submodules vnpresence
+          --hidden-import PIL._tkinter_finder
           tools/entry.py
 
       - name: Build VNPresence-cli.exe (console, for doctor/watch output)
@@ -35,6 +40,7 @@ jobs:
           pyinstaller --onefile --console --name VNPresence-cli
           --icon assets/icon.ico
           --paths src --collect-submodules vnpresence
+          --hidden-import PIL._tkinter_finder
           tools/entry.py
 
       # A frozen build can fail at import time while the tests all pass, so
@@ -44,6 +50,7 @@ jobs:
           .\dist\VNPresence-cli.exe --version
           .\dist\VNPresence-cli.exe --help
           .\dist\VNPresence-cli.exe status
+          .\dist\VNPresence-cli.exe selfcheck
 
       - uses: actions/upload-artifact@v4
         with:

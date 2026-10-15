@@ -18,6 +18,8 @@ and a link to its VNDB page - the way a normal game does.
 - Per-game privacy, with a one-switch option to hide 18+ titles
 - A plugin API for anything the defaults do not cover
 - Works with emulated visual novels too - PSP, PS2, PS3, Vita, Switch
+- Your library as a sortable list or a shelf of covers, with time played, last played and sessions
+- A details page per game, and an F8 screenshot gallery for each novel
 - Three themes, including a deep-blue-and-gold one for the Kingdom Hearts fans
 - Updates itself: it tells you when a new build is out and installs it
 - MIT licensed, no telemetry, nothing phoning home except VNDB
@@ -107,6 +109,7 @@ vnpresence search "muv luv"                 # look up VNDB ids
 vnpresence emulators                        # which emulator is running what
 vnpresence window muv-luv BLJM60123         # which title bar means this game
 vnpresence focus muv-luv                    # is it counting my reading right now?
+vnpresence screenshots muv-luv --open       # that game's screenshot gallery
 vnpresence theme kingdom-hearts             # change the window's colours
 vnpresence update                           # is there a newer build? install it
 vnpresence doctor                           # check Discord, VNDB, config, paths
@@ -155,28 +158,74 @@ is not there.
 
 ### The window
 
+It opens maximized, and remembers how you left it: maximized, or the size you
+dragged it to.
+
 ```
-┌─ Your library ──────────────────── Theme [Midnight ▾] [Updates] ─┐
-│ [ filter…                                            ]  [Clear]  │
-│ ┌──────────────────────────────────────────────────────────────┐ │
-│ │ Game                    Time read   Privacy   VNDB           │ │
-│ │ STEINS;GATE               12h 40m      full   v2002          │ │
-│ │ Muv-Luv Alternative           58h      full   v92            │ │  ← selected
-│ │ Tsukihime                 31h 05m      auto   v7             │ │
-│ └──────────────────────────────────────────────────────────────┘ │
-│ [ ▶ Play ]  [Add game…]                               [Stop]     │
-│ [VNDB link…] [Rename…] [Time read…] [Remove]                     │
-│ Route / chapter: [ Ayamine route          ] [Set] [Clear]        │
-└──────────────────────────────────────────────────────────────────┘
+┌─ Your library ─────────────────────────────── Theme [Midnight ▾] [Updates] ─┐
+│ [☰ List][▦ Grid] [ filter…                                    ]  [Clear]    │
+│ ┌────────────────────────────────────────────────────────────────────────┐  │
+│ │ Game                Time played  Last played  Sessions  Privacy VNDB   │  │
+│ │ Mahoutsukai no Yoru     41h 21m        Today        18     full v777   │  │
+│ │ STEINS;GATE             12h 40m    Yesterday         7     full v2002  │  │
+│ │ Muv-Luv Alternative         58h   4 days ago        22     full v92    │  │
+│ │ MAMIYA                        -        Never         -     full v18773 │  │
+│ └────────────────────────────────────────────────────────────────────────┘  │
+│ [ ▶ Play ]  [Add game…]                                          [Stop]     │
+│ [Details…] [VNDB link…] [Rename…] [Time played…] [Remove]                   │
+│ Privacy [full ▾]  New games [full ▾]   ☐ Auto-detect   ☐ Start with Windows │
+│ Route / chapter: [ Chapter 7 - The Witch's Hill        ] [Set] [Clear]      │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+- **List or grid.** The list is a sortable table; the grid is your covers on a
+  shelf, the way PCSX2 shows a library. `Ctrl+G` flips between them and the
+  choice is kept. Covers come from VNDB, are downloaded once into the cache
+  folder, and work offline after that. A game with no cover, or one set to
+  `private`, gets a plain card with its name - so the grid is safe to have on
+  screen while you stream.
+- **Time played, Last played, Sessions.** Last played reads *Today*,
+  *Yesterday*, *3 days ago*, then a date. Click a heading to sort by it - the
+  most played, the most recent, the most returned-to come first - and click
+  again to reverse.
+- **Details…** (or `Ctrl+I`, or right-click a game) opens a page for that one
+  novel: the big cover, everything above, its length and rating from VNDB, the
+  route you are on, and its screenshots.
 - **One primary button.** Play is the only coloured one; everything else is quiet.
-- **Actions that need a game grey out** until one is selected, so nothing you can
-  press does nothing.
 - **Type to filter** - by name or by id. `Ctrl+F` jumps to the box, `F5` refreshes.
-- **Click a heading to sort**, click it again to reverse. Sort by *Time read* to
-  see what you actually read.
-- **Enter** plays the selected game, **Delete** removes it, **double-click** plays.
+- **Enter** or a **double-click** plays, **Delete** removes, **right-click** for
+  everything else.
+
+### Screenshots
+
+Press **F8** while a game is running and VNPresence saves a picture of the
+game's window - just the game, not the desktop around it - into that novel's
+own gallery:
+
+```
+%APPDATA%\VNPresence\screenshots\<game id>\2026-10-15 21-30-05.png
+```
+
+The details page shows them; click one to open it, or **Screenshots folder**
+for all of them. From the command line: `vnpresence screenshots <game> --open`.
+
+The key is only claimed while a game is being tracked, and handed back when it
+closes - a key held all evening would quietly stop working in every other
+program. Change it in `config.yaml`:
+
+```yaml
+screenshot_hotkey: "F8"            # or "Ctrl+Shift+S", "Alt+PrintScreen"; "" for none
+```
+
+Not **F12**: Windows reserves it for debuggers and says not to register it.
+A single letter is refused too, or you could never type it anywhere else.
+
+**A black picture** means the game runs in *exclusive* fullscreen, which hands
+the screen straight to the graphics card and leaves nothing to copy. Switch the
+game to windowed or borderless - most visual novels offer it - and it works.
+
+To check it all on your own machine (the window search, display scaling, and
+the key), run `python tools/verify_screenshots.py`.
 
 #### Themes
 
@@ -783,6 +832,9 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | It matched the wrong entry with the same name | Repoint it with `vnpresence link <game> <vndb link>`, or **VNDB link…** in the window. The link is exact; a name is not |
 | The reading total keeps rising while I am in another window | Run `vnpresence focus <game>` and move around: it prints which window has the focus, how long since you touched anything, and what that counts as. If every line says `reading`, check `focused_time_only` in `config.yaml` and that you are on 0.14.0 or newer (`vnpresence --version`) |
 | It says `Idle` while I am reading | You are on a long auto-mode scene, or reading with a controller - neither reaches `GetLastInputInfo`. Raise `idle_after` in `config.yaml`, or set it to `0` |
+| Screenshots come out black | The game is in exclusive fullscreen. Set it to windowed or borderless and they work |
+| F8 does nothing | Another program already owns it - the status line says so when a session starts. Set `screenshot_hotkey` in `config.yaml` to another key |
+| The grid shows names but no covers | They are still downloading (once, in the background), or the game is set to `private`. If it lasts, `vnpresence rematch --all` |
 | The emulator opens and Discord shows the *emulator* playing, not the novel | The emulator's own Rich Presence is on and Discord shows one game at a time. Turn it off in the emulator's settings ("Enable Discord Rich Presence") |
 | The emulator opens but no presence appears | Fixed in 0.15.2. Before it, VNPresence waited for the game's name to reach the emulator's title bar and gave up after twelve seconds - less time than a Switch game takes to compile its shaders |
 | `%1 is not a valid Win32 application` when I press Play | You added the ROM instead of the emulator. Re-add it: `vnpresence add "C:\path\to\Ryujinx.exe" --rom "D:\roms\game.xci"`, or remove the game and pick the emulator under **Add game…** |

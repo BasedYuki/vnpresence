@@ -120,6 +120,16 @@ class AppConfig:
     idle_after: float = 600.0
     #: Window colours: "midnight", "daylight" or "kingdom-hearts".
     theme: str = "midnight"
+    #: How the library is shown: "list" (a table, sortable) or "grid" (covers).
+    library_view: str = "list"
+    #: Open the window maximized. The size it was last left at is remembered
+    #: in window_geometry, and used whenever this is off.
+    start_maximized: bool = True
+    window_geometry: str = ""
+    #: Key that saves a screenshot of the game into its gallery while a
+    #: session is running, e.g. "F8" or "Ctrl+Shift+S". Empty turns it off.
+    #: Not F12: Windows reserves it for debuggers. Windows only.
+    screenshot_hotkey: str = "F8"
     #: Ask GitHub once a day whether a newer VNPresence has been released.
     #: The check is read-only and nothing is ever downloaded without a yes.
     check_updates: bool = True

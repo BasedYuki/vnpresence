@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
+import subprocess
 import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import __version__, startup, theme, update
+from . import __version__, covers, screenshots, startup, theme, update
 from .config import AppConfig
 from .daemon import running_pid, spawn_background, stop_background
 from .emulators import is_emulator, is_rom, rom_kind
@@ -29,6 +31,7 @@ from .emulators import label as emulator_label
 from .emulators import running as running_emulators
 from .launcher import LaunchError
 from .library import Library
+from .library_view import Card, card_for, last_played_key, row_values
 from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
 from .notes import read_note, write_note
 from .playtime import Playtime, format_reading_time, parse_duration
@@ -42,6 +45,14 @@ log = logging.getLogger(__name__)
 #: running. The session writes it once a minute, so anything faster would be
 #: redrawing the same numbers.
 REFRESH_WHILE_PLAYING = 60_000  # milliseconds
+
+#: One cover in the grid, in pixels. Portrait, the shape of a game box.
+COVER_SIZE = (150, 213)
+#: A tile is the cover plus room around it for the title and the time.
+TILE_WIDTH = COVER_SIZE[0] + 24
+
+#: The window's size when it is not maximized and has never been resized.
+DEFAULT_GEOMETRY = "1040x680"
 
 PRIVACY_HELP = {
     PrivacyMode.AUTO: "Auto - hide the title for 18+ games",
@@ -64,15 +75,23 @@ def matches(profile: GameProfile, query: str) -> bool:
     return query in (profile.title or "").casefold() or query in profile.id.casefold()
 
 
-def row_values(profile: GameProfile, seconds: float = 0.0) -> tuple[str, str, str, str]:
-    """One line of the library list."""
-    read = format_reading_time(seconds) or "-"
-    return (
-        profile.title,
-        read.replace(" read", ""),
-        profile.privacy.value,
-        profile.vndb_id or "-",
-    )
+def _quietly(action) -> None:
+    """Run a UI touch-up that may find its window already closed."""
+    with contextlib.suppress(Exception):
+        action()
+
+
+def open_path(path) -> None:
+    """Show a file or folder in whatever the desktop uses for it."""
+    try:
+        if sys.platform == "win32":
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])  # noqa: S603, S607
+        else:
+            subprocess.Popen(["xdg-open", str(path)])  # noqa: S603, S607
+    except Exception:
+        log.debug("could not open %s", path, exc_info=True)
 
 
 def _first_lines(notes: str, limit: int = 8) -> str:
@@ -94,13 +113,23 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("VNPresence")
-        self.geometry("560x380")
-        self.minsize(460, 320)
+        self.minsize(720, 480)
 
         self.config_data = AppConfig.load()
         self.library = Library()
         self.session: GameSession | None = None
         self.worker: threading.Thread | None = None
+        #: Covers drawn for the grid, kept so Tk does not garbage-collect the
+        #: image out from under a tile that is still on screen.
+        self._tile_images: dict[str, object] = {}
+        self._tile_cache: dict[tuple, object] = {}
+        self._cards: list[Card] = []
+        self._fetching_covers = False
+        self._details = None
+
+        self.geometry(self.config_data.window_geometry or DEFAULT_GEOMETRY)
+        if self.config_data.start_maximized:
+            self._maximize()
 
         self._build_widgets()
         self.refresh()
@@ -136,22 +165,35 @@ class App(tk.Tk):
         # Filter: a library of forty games needs one, and it costs one row.
         filter_row = ttk.Frame(frame)
         filter_row.pack(fill="x", pady=(10, 6))
+        # List or covers - the two ways PCSX2 shows a library, and the choice
+        # survives a restart.
+        self.view_var = tk.StringVar(value=self.config_data.library_view or "list")
+        for value, text in (("list", "\u2630  List"), ("grid", "\u25a6  Grid")):
+            ttk.Radiobutton(
+                filter_row, text=text, value=value, variable=self.view_var,
+                style="View.Toolbutton", command=self.set_view,
+            ).pack(side="left", padx=(0, 4))
         self.filter_var = tk.StringVar()
         self.filter_entry = ttk.Entry(filter_row, textvariable=self.filter_var)
-        self.filter_entry.pack(side="left", fill="x", expand=True)
+        self.filter_entry.pack(side="left", fill="x", expand=True, padx=(8, 0))
         self.filter_var.trace_add("write", lambda *_: self.refresh())
         ttk.Button(filter_row, text="Clear", command=self.clear_filter).pack(side="left", padx=6)
 
-        # The library itself.
-        list_frame = ttk.Frame(frame)
-        list_frame.pack(fill="both", expand=True)
+        # The library itself: the list and the grid share one spot, and one
+        # selection - the list is the source of truth even when hidden, so
+        # every button below works the same whichever view is showing.
+        self.library_area = ttk.Frame(frame)
+        self.library_area.pack(fill="both", expand=True)
+        list_frame = self.list_frame = ttk.Frame(self.library_area)
         self.tree = ttk.Treeview(
-            list_frame, columns=("title", "read", "privacy", "vndb"),
+            list_frame, columns=("title", "read", "last", "sessions", "privacy", "vndb"),
             show="headings", height=11, selectmode="browse",
         )
         for column, heading, width, anchor in (
-            ("title", "Game", 280, "w"),
-            ("read", "Time read", 90, "e"),
+            ("title", "Game", 340, "w"),
+            ("read", "Time played", 100, "e"),
+            ("last", "Last played", 110, "center"),
+            ("sessions", "Sessions", 80, "center"),
             ("privacy", "Privacy", 80, "center"),
             ("vndb", "VNDB", 70, "center"),
         ):
@@ -161,6 +203,7 @@ class App(tk.Tk):
         self.tree.configure(yscrollcommand=scroll.set)
         self.tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+        self._build_grid()
 
         # Rows alternate, and the selected game drives the buttons below.
         self.tree.tag_configure("odd", background=self.palette.stripe)
@@ -168,6 +211,7 @@ class App(tk.Tk):
         self.tree.bind("<Return>", lambda _event: self.play_selected())
         self.tree.bind("<Delete>", lambda _event: self.remove_selected())
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self.on_select())
+        self.tree.bind("<Button-3>", self._row_menu)
 
         # Primary action, alone, so it is obvious what to press first.
         actions = ttk.Frame(frame)
@@ -187,16 +231,17 @@ class App(tk.Tk):
         game_row = ttk.Frame(frame)
         game_row.pack(fill="x", pady=(8, 0))
         for text, command in (
+            ("Details\u2026", self.open_details),
             ("VNDB link\u2026", self.relink_selected),
             ("Rename\u2026", self.rename_selected),
-            ("Time read\u2026", self.set_playtime),
+            ("Time played\u2026", self.set_playtime),
             ("Remove", self.remove_selected),
         ):
             button = ttk.Button(game_row, text=text, command=command)
             button.pack(side="left", padx=(0, 6))
             self.needs_selection.append(button)
 
-        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=12)
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=8)
 
         # Per-game settings, on one line each, with what they mean beside them.
         privacy_row = ttk.Frame(frame)
@@ -237,32 +282,33 @@ class App(tk.Tk):
         ttk.Button(note_row, text="Set", command=self.apply_note).pack(side="left")
         ttk.Button(note_row, text="Clear", command=self.clear_note).pack(side="left", padx=4)
 
-        # The two switches that make the app hands-off: no terminal needed.
-        switches = ttk.Frame(frame)
-        switches.pack(fill="x", pady=(12, 0))
-
-        self.watch_var = tk.BooleanVar(value=running_pid() is not None)
-        ttk.Checkbutton(
-            switches, text="Auto-detect games I start myself",
-            variable=self.watch_var, command=self.toggle_watch,
-        ).pack(anchor="w")
-
+        # The two switches that make the app hands-off, at the end of the
+        # privacy row: one row less under the library is a row more of covers.
         self.startup_var = tk.BooleanVar(value=self._startup_state())
         self.startup_box = ttk.Checkbutton(
-            switches, text="Start with Windows",
+            privacy_row, text="Start with Windows",
             variable=self.startup_var, command=self.toggle_startup,
         )
-        self.startup_box.pack(anchor="w")
+        self.startup_box.pack(side="right")
         if sys.platform != "win32":
             self.startup_box.state(["disabled"])
 
+        self.watch_var = tk.BooleanVar(value=running_pid() is not None)
+        ttk.Checkbutton(
+            privacy_row, text="Auto-detect games I start myself",
+            variable=self.watch_var, command=self.toggle_watch,
+        ).pack(side="right", padx=(0, 16))
+
         self.status = tk.StringVar(value=f"VNPresence {__version__} - pick a game and press Play")
         ttk.Label(frame, textvariable=self.status, style="Muted.TLabel").pack(
-            fill="x", pady=(12, 0)
+            fill="x", pady=(8, 0)
         )
 
         self.bind("<Control-f>", lambda _e: self.filter_entry.focus_set())
         self.bind("<F5>", lambda _e: self.refresh())
+        self.bind("<Control-i>", lambda _e: self.open_details())
+        self.bind("<Control-g>", lambda _e: self.toggle_view())
+        self._show_view()
         self.on_select()
 
     # -- data -------------------------------------------------------------
@@ -274,9 +320,15 @@ class App(tk.Tk):
 
         def key(profile: GameProfile):
             column = self.sort_column
+            entry = history.get(profile.id)
+            # Most first, for the three numbers: what you want at the top of a
+            # "Last played" column is what you played last.
             if column == "read":
-                entry = history.get(profile.id)
                 return -(entry.seconds if entry else 0.0)
+            if column == "last":
+                return -last_played_key(entry.last_played if entry else None)
+            if column == "sessions":
+                return -(entry.sessions if entry else 0)
             if column == "privacy":
                 return profile.privacy.value
             if column == "vndb":
@@ -291,17 +343,18 @@ class App(tk.Tk):
         history = Playtime().load()
         shown = self.visible_profiles()
         for index, profile in enumerate(shown):
-            entry = history.get(profile.id)
             self.tree.insert(
                 "",
                 "end",
                 iid=profile.id,
-                values=row_values(profile, entry.seconds if entry else 0.0),
+                values=row_values(profile, history.get(profile.id)),
                 tags=("odd",) if index % 2 else (),
             )
         # Keep the selection across a refresh, or the buttons flicker off.
         if selected and selected[0] in {p.id for p in shown}:
             self.tree.selection_set(selected[0])
+        if getattr(self, "view_var", None) is not None and self.view_var.get() == "grid":
+            self.refresh_grid(shown, history)
         self.on_select()
 
     #: The list starts alphabetical, which is what a library of names wants.
@@ -313,6 +366,270 @@ class App(tk.Tk):
         self.sort_reverse = (not self.sort_reverse) if column == self.sort_column else False
         self.sort_column = column
         self.refresh()
+
+    # -- list or grid -------------------------------------------------------
+    def set_view(self) -> None:
+        """The switch was pressed: show that view and remember the choice."""
+        self.config_data.library_view = self.view_var.get()
+        with contextlib.suppress(Exception):
+            self.config_data.save()
+        self._show_view()
+        self.refresh()
+
+    def toggle_view(self) -> None:
+        self.view_var.set("list" if self.view_var.get() == "grid" else "grid")
+        self.set_view()
+
+    def _show_view(self) -> None:
+        if self.view_var.get() == "grid":
+            self.list_frame.pack_forget()
+            self.grid_frame.pack(fill="both", expand=True)
+        else:
+            self.grid_frame.pack_forget()
+            self.list_frame.pack(fill="both", expand=True)
+
+    def _build_grid(self) -> None:
+        """A scrolling shelf of covers: a canvas, with a frame of tiles inside."""
+        self.grid_frame = ttk.Frame(self.library_area)
+        self.grid_canvas = tk.Canvas(
+            self.grid_frame, highlightthickness=0, borderwidth=0,
+            background=self.palette.background,
+        )
+        scroll = ttk.Scrollbar(self.grid_frame, orient="vertical",
+                               command=self.grid_canvas.yview)
+        self.grid_canvas.configure(yscrollcommand=scroll.set)
+        self.grid_canvas.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        self.grid_inner = ttk.Frame(self.grid_canvas)
+        self._grid_window = self.grid_canvas.create_window(
+            (0, 0), window=self.grid_inner, anchor="nw")
+        self.grid_inner.bind("<Configure>", lambda _e: self.grid_canvas.configure(
+            scrollregion=self.grid_canvas.bbox("all")))
+        self.grid_canvas.bind("<Configure>", lambda _e: self._layout_grid())
+        # The wheel scrolls the shelf wherever the pointer is over it.
+        for widget in (self.grid_canvas, self.grid_inner):
+            widget.bind("<MouseWheel>", self._wheel)
+            widget.bind("<Button-4>", self._wheel)
+            widget.bind("<Button-5>", self._wheel)
+        self._tiles: dict[str, ttk.Frame] = {}
+        self._columns = 0
+
+    def _wheel(self, event) -> str:
+        if getattr(event, "num", None) == 4:
+            step = -3
+        elif getattr(event, "num", None) == 5:
+            step = 3
+        else:
+            step = -int(event.delta / 40) or (-1 if event.delta > 0 else 1)
+        self.grid_canvas.yview_scroll(step, "units")
+        return "break"
+
+    def refresh_grid(self, shown=None, history=None) -> None:
+        """Rebuild the tiles for whatever the list is showing, in its order."""
+        shown = self.visible_profiles() if shown is None else shown
+        history = Playtime().load() if history is None else history
+        client = VNDBClient(cache_days=self.config_data.cache_days)
+        self._cards = [
+            card_for(profile, history.get(profile.id),
+                     client.peek(profile.vndb_id) if profile.vndb_id else None,
+                     self.config_data)
+            for profile in shown
+        ]
+        for child in self.grid_inner.winfo_children():
+            child.destroy()
+        self._tiles = {}
+        self._tile_images = {}
+        for card in self._cards:
+            self._tiles[card.id] = self._make_tile(card)
+        self._columns = 0  # force a re-layout
+        self._layout_grid()
+        self._paint_selection()
+        self._fetch_missing_covers()
+
+    def _make_tile(self, card: Card):
+        tile = ttk.Frame(self.grid_inner, style="Tile.TFrame", padding=6)
+        image = self._tile_image(card)
+        self._tile_images[card.id] = image
+        cover = ttk.Label(tile, image=image, style="Tile.TLabel")
+        cover.pack()
+        name = ttk.Label(tile, text=card.title, style="Tile.TLabel",
+                         wraplength=COVER_SIZE[0], justify="center", anchor="center")
+        name.pack(fill="x", pady=(6, 0))
+        played = ttk.Label(tile, text=card.time_played if card.time_played != "-" else "",
+                           style="TileMuted.TLabel", anchor="center")
+        played.pack(fill="x")
+        tile._labels = (cover, name, played)  # type: ignore[attr-defined]
+        for widget in (tile, cover, name, played):
+            widget.bind("<Button-1>", lambda _e, i=card.id: self._select_card(i))
+            widget.bind("<Double-1>", lambda _e, i=card.id: self._play_card(i))
+            widget.bind("<Button-3>", lambda e, i=card.id: self._card_menu(e, i))
+            widget.bind("<MouseWheel>", self._wheel)
+            widget.bind("<Button-4>", self._wheel)
+            widget.bind("<Button-5>", self._wheel)
+        return tile
+
+    def _tile_image(self, card: Card, size=COVER_SIZE):
+        """The cover as a Tk image - or a card with the title on it."""
+        path = None if card.hide_cover else covers.cached(card.cover_url)
+        key = (str(path), card.title, size, self.palette.name,
+               path.stat().st_mtime if path else 0)
+        picture = self._tile_cache.get(key)
+        if picture is None:
+            picture = covers.tile(path, size, title=card.title,
+                                  background=self.palette.surface,
+                                  foreground=self.palette.muted)
+            self._tile_cache[key] = picture
+        try:
+            from PIL import ImageTk
+
+            return ImageTk.PhotoImage(picture, master=self)
+        except Exception:  # pragma: no cover - Pillow ships in the .exe
+            # Loudly, once: a broken Tk bridge looks like a grid of empty
+            # boxes, and the log is the only place that can say why.
+            if not getattr(self, "_warned_images", False):
+                self._warned_images = True
+                log.warning("cannot draw covers", exc_info=True)
+            return ""
+
+    def _layout_grid(self) -> None:
+        """As many columns as fit; recomputed when the window is resized."""
+        width = max(self.grid_canvas.winfo_width(), TILE_WIDTH)
+        columns = max(width // (TILE_WIDTH + 12), 1)
+        self.grid_canvas.itemconfigure(self._grid_window, width=width)
+        if columns == self._columns:
+            return
+        self._columns = columns
+        for index, card in enumerate(self._cards):
+            tile = self._tiles.get(card.id)
+            if tile is not None:
+                tile.grid(row=index // columns, column=index % columns,
+                          padx=6, pady=6, sticky="n")
+
+    def _select_card(self, game_id: str) -> None:
+        self.tree.selection_set(game_id)
+        self.tree.see(game_id)
+        self.on_select()
+        self._paint_selection()
+
+    def _play_card(self, game_id: str) -> None:
+        self._select_card(game_id)
+        self.play_selected()
+
+    def _paint_selection(self) -> None:
+        """Light the chosen tile the way the list lights the chosen row."""
+        selection = self.tree.selection()
+        chosen = selection[0] if selection else None
+        for game_id, tile in getattr(self, "_tiles", {}).items():
+            on = game_id == chosen
+            tile.configure(style="TileSelected.TFrame" if on else "Tile.TFrame")
+            cover, name, played = tile._labels  # type: ignore[attr-defined]
+            for label in (cover, name):
+                label.configure(style="TileSelected.TLabel" if on else "Tile.TLabel")
+            played.configure(style="TileSelectedMuted.TLabel" if on else "TileMuted.TLabel")
+
+    def _fetch_missing_covers(self) -> None:
+        """Download the covers the grid is missing, off the main thread.
+
+        One trip per missing cover, once: they go into the cache folder and
+        the next refresh finds them there. The window redraws when the batch
+        is done rather than per image, so the shelf does not flicker.
+        """
+        wanted = [c for c in self._cards if not c.hide_cover]
+        missing = [c for c in wanted if not covers.cached(c.cover_url)]
+        if not missing or self._fetching_covers:
+            return
+        self._fetching_covers = True
+        profiles = {p.id: p for p in self.library.load_all()}
+
+        def work() -> None:
+            got = False
+            client = VNDBClient(cache_days=self.config_data.cache_days)
+            try:
+                for card in missing:
+                    url = card.cover_url
+                    if not url:
+                        profile = profiles.get(card.id)
+                        if profile is None or not profile.vndb_id:
+                            continue
+                        try:
+                            metadata = client.get(profile.vndb_id)
+                        except Exception:
+                            continue
+                        url = metadata.image_url if metadata else None
+                    if covers.download(url) is not None:
+                        got = True
+            finally:
+                self._fetching_covers = False
+            if got:
+                self.after(0, self.refresh)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    # -- right-click ------------------------------------------------------
+    def _row_menu(self, event) -> None:
+        row = self.tree.identify_row(event.y)
+        if row:
+            self._card_menu(event, row)
+
+    def _card_menu(self, event, game_id: str) -> None:
+        self._select_card(game_id)
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="▶  Play", command=self.play_selected)
+        menu.add_command(label="Details…", command=self.open_details)
+        menu.add_command(label="Screenshots folder", command=self.open_gallery)
+        menu.add_separator()
+        menu.add_command(label="Rename…", command=self.rename_selected)
+        menu.add_command(label="VNDB link…", command=self.relink_selected)
+        menu.add_command(label="Remove", command=self.remove_selected)
+        with contextlib.suppress(Exception):
+            menu.tk_popup(event.x_root, event.y_root)
+
+    # -- details and the gallery --------------------------------------------
+    def open_details(self) -> None:
+        profile = self.selected_profile()
+        if profile is None:
+            return
+        from .details_window import DetailsWindow
+
+        if self._details is not None:
+            with contextlib.suppress(Exception):
+                self._details.destroy()
+        self._details = DetailsWindow(self, profile)
+
+    def open_gallery(self) -> None:
+        profile = self.selected_profile()
+        if profile is None:
+            return
+        folder = screenshots.gallery_dir(profile.id)
+        folder.mkdir(parents=True, exist_ok=True)
+        open_path(folder)
+
+    # -- the window itself ----------------------------------------------------
+    def _maximize(self) -> None:
+        """Maximized, not fullscreen: the title bar and taskbar stay."""
+        try:
+            self.state("zoomed")  # Windows, macOS
+        except Exception:
+            with contextlib.suppress(Exception):
+                self.attributes("-zoomed", True)  # X11
+
+    def _is_maximized(self) -> bool:
+        with contextlib.suppress(Exception):
+            if self.state() == "zoomed":
+                return True
+        with contextlib.suppress(Exception):
+            return bool(self.attributes("-zoomed"))
+        return False
+
+    def _remember_window(self) -> None:
+        """Keep how the reader left it: maximized, or the size they chose."""
+        maximized = self._is_maximized()
+        self.config_data.start_maximized = maximized
+        if not maximized:
+            with contextlib.suppress(Exception):
+                self.config_data.window_geometry = self.geometry()
+        with contextlib.suppress(Exception):
+            self.config_data.save()
 
     def clear_filter(self) -> None:
         self.filter_var.set("")
@@ -332,6 +649,8 @@ class App(tk.Tk):
         self.privacy_var.set(profile.privacy.value)
         self.load_note()
         self.status.set(PRIVACY_HELP[profile.privacy])
+        if hasattr(self, "_tiles"):
+            self._paint_selection()
 
     def selected_profile(self) -> GameProfile | None:
         selection = self.tree.selection()
@@ -344,6 +663,12 @@ class App(tk.Tk):
         palette = theme.by_label(self.theme_var.get())
         self.palette = theme.apply(self, palette.name)
         self.tree.tag_configure("odd", background=self.palette.stripe)
+        # Placeholder cards are drawn in the theme's colours: draw them again.
+        getattr(self, "_tile_cache", {}).clear()
+        with contextlib.suppress(Exception):
+            self.grid_canvas.configure(background=self.palette.background)
+            if self.view_var.get() == "grid":
+                self.refresh_grid()
         self.config_data.theme = palette.name
         try:
             self.config_data.save()
@@ -917,6 +1242,13 @@ class App(tk.Tk):
             self.status.set("Stopping…")
 
     def _on_event(self, kind: str, message: str) -> None:
+        if kind == "screenshot":
+            self._set_status(f"\U0001f4f7 {message}")
+            # An open details page for this game shows the new picture at once.
+            details = self._details
+            if details is not None and message.startswith("saved"):
+                self.after(0, lambda: _quietly(details.refresh_gallery))
+            return
         if kind == "focus":
             # The one event the reader is actually watching for: whether the
             # clock is running. It deserves a sentence, not "focus: paused".
@@ -936,6 +1268,7 @@ class App(tk.Tk):
         self.after(0, lambda: self.status.set(text))
 
     def _on_close(self) -> None:
+        self._remember_window()
         if self.session is not None:
             self.session.stop()
         self.destroy()
