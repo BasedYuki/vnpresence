@@ -27,6 +27,9 @@ def no_network(monkeypatch):
     # Covers too: a grid test that quietly downloaded real JPEGs would pass
     # offline-by-accident and fail on the next CI runner without network.
     monkeypatch.setattr("vnpresence.covers.requests.get", refuse)
+    # And your VNDB list: a test that changed a real reader's list would be
+    # worse than one that merely read from VNDB.
+    monkeypatch.setattr("vnpresence.vndb_list.requests.request", refuse)
 
 
 @pytest.fixture(autouse=True)

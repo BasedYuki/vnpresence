@@ -145,3 +145,20 @@ def test_a_mangled_vndb_id_falls_back_to_the_search():
 
     url, linked = vndb_page(GameProfile(id="x", title="Rewrite", vndb_id="garbage"))
     assert (url, linked) == ("https://vndb.org/v?q=Rewrite", False)
+
+
+# -- grid cover size ------------------------------------------------------
+def test_the_cover_keeps_its_shape_at_any_size():
+    from vnpresence.library_view import cover_size
+
+    assert cover_size(150) == (150, 213)
+    assert cover_size(200) == (200, 284)
+
+
+def test_a_silly_cover_width_is_clamped_not_drawn():
+    from vnpresence.library_view import MAX_COVER_WIDTH, MIN_COVER_WIDTH, cover_size
+
+    assert cover_size(5)[0] == MIN_COVER_WIDTH
+    assert cover_size(10_000)[0] == MAX_COVER_WIDTH
+    assert cover_size("big")[0] == 150  # a hand-edited config
+    assert cover_size(None)[0] == 150

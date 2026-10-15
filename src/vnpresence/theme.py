@@ -97,6 +97,75 @@ PALETTES: dict[str, Palette] = {
         accent_text="#081434",
         border="#1d346f",
     ),
+    # Six more, two light and four dark, each one background family and one
+    # accent. The accents on the dark ones are pale, so the text on them is
+    # dark - white on a pastel would fail the contrast test, and rightly.
+    "sakura": Palette(
+        name="sakura",
+        label="Sakura",
+        background="#f8dde7",
+        surface="#fdf1f5",
+        text="#35202b",
+        muted="#7d5566",
+        accent="#ad3d67",
+        accent_text="#ffffff",
+        border="#e9c3d2",
+    ),
+    "lilac-dusk": Palette(
+        name="lilac-dusk",
+        label="Lilac Dusk",
+        background="#282a35",
+        surface="#343744",
+        text="#eceaf6",
+        muted="#a5a3ba",
+        accent="#b09af0",
+        accent_text="#1b1530",
+        border="#454857",
+    ),
+    "steel": Palette(
+        name="steel",
+        label="Steel",
+        background="#2f343f",
+        surface="#3c414f",
+        text="#ecf0f6",
+        muted="#aab2c1",
+        accent="#93cfe3",
+        accent_text="#0f242c",
+        border="#4c5263",
+    ),
+    "lavender": Palette(
+        name="lavender",
+        label="Lavender",
+        background="#eceaf1",
+        surface="#f9f8fc",
+        text="#1f1c2c",
+        muted="#5f5b76",
+        accent="#7444e0",
+        accent_text="#ffffff",
+        border="#d8d4e4",
+    ),
+    "navy": Palette(
+        name="navy",
+        label="Navy",
+        background="#22253a",
+        surface="#2c3048",
+        text="#e8ebf8",
+        muted="#9ea6c6",
+        accent="#86a6f2",
+        accent_text="#101934",
+        border="#3b405b",
+    ),
+    "forest": Palette(
+        name="forest",
+        label="Forest",
+        background="#111516",
+        surface="#1b2223",
+        text="#e3ece9",
+        muted="#93a5a0",
+        accent="#86e0cf",
+        accent_text="#0b2420",
+        border="#2b3233",
+    ),
 }
 
 DEFAULT = "midnight"
@@ -220,7 +289,52 @@ def apply(root, name: str | None = None):  # pragma: no cover - needs a real Tk
               background=[("selected", palette.accent), ("active", palette.hover)],
               foreground=[("selected", palette.accent_text)])
 
+    # The grid's size slider: an accent knob on a quiet track.
+    style.configure("Horizontal.TScale", background=palette.accent,
+                    troughcolor=palette.border, bordercolor=palette.border,
+                    lightcolor=palette.accent, darkcolor=palette.accent, sliderthickness=14,
+                    gripcount=0)
+    style.map("Horizontal.TScale", background=[("active", _mix(palette.accent, "#ffffff", 0.15))])
+
     # Details page.
     style.configure("Title.TLabel", foreground=palette.text, font=("Segoe UI", 16, "bold"))
     style.configure("Fact.TLabel", foreground=palette.muted)
+
+    # The game page is made of cards: the surface colour, a hairline border,
+    # and everything inside them drawn on the surface too.
+    style.configure("Card.TFrame", background=palette.surface, bordercolor=palette.border,
+                    lightcolor=palette.border, darkcolor=palette.border,
+                    relief="solid", borderwidth=1)
+    style.configure("Inner.TFrame", background=palette.surface)
+    style.configure("Card.TLabel", background=palette.surface, foreground=palette.text)
+    style.configure("CardMuted.TLabel", background=palette.surface, foreground=palette.muted)
+    style.configure("CardHeading.TLabel", background=palette.surface, foreground=palette.text,
+                    font=("Segoe UI", 11, "bold"))
+    style.configure("CardTitle.TLabel", background=palette.surface, foreground=palette.text,
+                    font=("Segoe UI", 18, "bold"))
+    style.configure("StatName.TLabel", background=palette.surface, foreground=palette.muted,
+                    font=("Segoe UI", 8, "bold"))
+    style.configure("StatValue.TLabel", background=palette.surface, foreground=palette.text,
+                    font=("Segoe UI", 15, "bold"))
+    style.configure("Link.TLabel", background=palette.surface, foreground=palette.accent,
+                    font=("Segoe UI", 9, "underline"))
+    style.configure("Thumb.TLabel", background=palette.surface)
+    style.configure("ThumbSelected.TLabel", background=palette.accent)
+    # Buttons and toggles sitting on a card: one step away from the card's
+    # colour, so they read as buttons and not as holes.
+    chip = _mix(palette.surface, palette.background, 0.6)
+    style.configure("Card.TButton", background=chip, foreground=palette.text,
+                    bordercolor=palette.border, padding=(10, 4), relief="flat")
+    style.map("Card.TButton",
+              background=[("pressed", palette.pressed), ("active", palette.hover)],
+              foreground=[("disabled", palette.muted)])
+    style.configure("Chip.Toolbutton", background=chip, foreground=palette.text,
+                    padding=(10, 4), relief="flat")
+    style.map("Chip.Toolbutton",
+              background=[("selected", palette.accent), ("active", palette.hover)],
+              foreground=[("selected", palette.accent_text), ("disabled", palette.muted)])
+    style.configure("Card.TCombobox", fieldbackground=chip, background=chip,
+                    foreground=palette.text, arrowcolor=palette.muted,
+                    bordercolor=palette.border, padding=3)
+    style.map("Card.TCombobox", fieldbackground=[("readonly", chip)])
     return palette

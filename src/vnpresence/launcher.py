@@ -121,7 +121,58 @@ class ElevatedLaunch:
         return 0
 
 
-def launch(profile: GameProfile) -> subprocess.Popen | ElevatedLaunch:
+#: The ways a game can be started, and what the page calls them.
+LAUNCH_MODES = {
+    "normal": "Normal",
+    "locale-emulator": "Locale Emulator",
+    "ntlea": "NTLEA",
+}
+#: What NTLEA is told: Japanese code page and locale, and a Japanese font.
+NTLEA_ARGS = ["C932", "L1041", "FMS PGothic", "P4"]
+
+
+def launch_mode(profile: GameProfile) -> str:
+    mode = (getattr(profile, "launch_with", "") or "normal").strip().lower()
+    return mode if mode in LAUNCH_MODES else "normal"
+
+
+def wrapper_path(mode: str, config) -> str:
+    """Where the configured LEProc.exe / ntleas.exe is - "" when unknown."""
+    if config is None:
+        return ""
+    if mode == "locale-emulator":
+        return (getattr(config, "locale_emulator_path", "") or "").strip()
+    if mode == "ntlea":
+        return (getattr(config, "ntlea_path", "") or "").strip()
+    return ""
+
+
+def build_command(profile: GameProfile, exe: Path, config=None) -> list[str]:
+    """The command line that starts the game the way the reader chose.
+
+    Locale Emulator is handed the game alone, which runs it with LE's default
+    profile (Japanese). NTLEA takes the game and its settings as quoted
+    arguments. Either way the wrapper exits or steps aside once the game is
+    up, and the launcher follows the game's own process by its path - the
+    same way it already survives a game's own launcher .exe.
+    """
+    mode = launch_mode(profile)
+    if mode == "normal":
+        return [str(exe), *profile.args]
+    tool = wrapper_path(mode, config)
+    name = LAUNCH_MODES[mode]
+    if not tool:
+        raise LaunchError(f"{profile.title} is set to start through {name}, but where "
+                          f"{name} is has not been set. Pick it on the game's page.")
+    if not Path(tool).expanduser().exists():
+        raise LaunchError(f"{name} was not found at {tool}. Pick it again on the "
+                          "game's page.")
+    if mode == "locale-emulator":
+        return [tool, str(exe), *profile.args]
+    return [tool, str(exe), *NTLEA_ARGS]
+
+
+def launch(profile: GameProfile, config=None) -> subprocess.Popen | ElevatedLaunch:
     """Start the game executable, elevating through UAC if it demands it."""
     if not profile.path:
         raise LaunchError(f"{profile.title}: no executable path configured")
@@ -141,7 +192,7 @@ def launch(profile: GameProfile) -> subprocess.Popen | ElevatedLaunch:
         )
 
     cwd = profile.working_dir or str(exe.parent)
-    command = [str(exe), *profile.args]
+    command = build_command(profile, exe, config)
     log.info("launching %s", " ".join(command))
     kwargs: dict = {"cwd": cwd}
     if sys.platform == "win32":  # keep the game detached from our console
@@ -150,7 +201,7 @@ def launch(profile: GameProfile) -> subprocess.Popen | ElevatedLaunch:
         return subprocess.Popen(command, **kwargs)  # noqa: S603
     except OSError as exc:
         if getattr(exc, "winerror", None) == ERROR_ELEVATION_REQUIRED:
-            return _launch_elevated(exe, profile.args, cwd)
+            return _launch_elevated(Path(command[0]), command[1:], cwd)
         if getattr(exc, "winerror", None) == ERROR_BAD_EXE_FORMAT:
             raise LaunchError(
                 f"{exe.name} is not a program Windows can run. If it is a game "
@@ -200,8 +251,21 @@ def resolve_tracked_process(
         grace = max(grace, EMULATOR_GRACE)
     deadline = started_at + grace
     descendants = _watch_descendants(process.pid)
+    # Started through Locale Emulator or NTLEA: what we started is the
+    # wrapper, never the game, alive or not. Look for the game itself.
+    wrapped = launch_mode(profile) != "normal"
 
     while time.time() < deadline:
+        if wrapped:
+            if process.poll() is None:
+                descendants |= _watch_descendants(process.pid)
+            candidate = _find_candidate(profile, descendants, require_window=False)
+            if candidate is not None and candidate.pid != process.pid:
+                log.info("following %s (pid %s), started through %s", candidate.name(),
+                         candidate.pid, LAUNCH_MODES[launch_mode(profile)])
+                return TrackedGame(candidate.pid, candidate.name(), started_at)
+            time.sleep(poll_interval)
+            continue
         if process.poll() is None:  # still alive: it is the game itself
             descendants |= _watch_descendants(process.pid)
             time.sleep(poll_interval)

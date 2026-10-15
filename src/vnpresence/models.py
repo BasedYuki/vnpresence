@@ -53,6 +53,11 @@ class GameProfile:
     image_url: str | None = None  # overrides the cover from the provider
     description: str | None = None  # overrides the provider description
 
+    #: How the game is started: "normal", or through "locale-emulator" or
+    #: "ntlea" for Japanese games whose text comes out garbled (or that will
+    #: not start at all) on a non-Japanese Windows.
+    launch_with: str = "normal"
+
     # Process tracking
     process_names: list[str] = field(default_factory=list)
     launcher_grace: float = 12.0  # seconds to wait for a relaunched process
@@ -161,6 +166,9 @@ class GameMetadata:
     languages: list[str] = field(default_factory=list)
     platforms: list[str] = field(default_factory=list)
     length: str | None = None
+    #: VNDB's average of its readers' play times, in minutes; None when too
+    #: few have logged one. What "Progress" on the game page compares with.
+    length_minutes: int | None = None
     rating: float | None = None
     #: How many people rated it. Not for display: it is how a well-known novel
     #: is told from a near-empty entry that happens to share its name.
@@ -179,6 +187,7 @@ class GameMetadata:
             "languages": list(self.languages),
             "platforms": list(self.platforms),
             "length": self.length,
+            "length_minutes": self.length_minutes,
             "rating": self.rating,
             "votes": self.votes,
             "nsfw": self.nsfw,

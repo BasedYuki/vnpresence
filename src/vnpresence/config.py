@@ -118,10 +118,14 @@ class AppConfig:
     #: Set it to 0 to switch idle detection off and go by the focused window
     #: alone. Windows only.
     idle_after: float = 600.0
-    #: Window colours: "midnight", "daylight" or "kingdom-hearts".
+    #: Window colours: "midnight", "daylight", "kingdom-hearts", "sakura",
+    #: "lilac-dusk", "steel", "lavender", "navy" or "forest".
     theme: str = "midnight"
     #: How the library is shown: "list" (a table, sortable) or "grid" (covers).
     library_view: str = "list"
+    #: How wide each cover is in the grid, in pixels (90 to 300). The slider
+    #: and Ctrl + mouse wheel change it.
+    grid_cover_width: int = 150
     #: Open the window maximized. The size it was last left at is remembered
     #: in window_geometry, and used whenever this is off.
     start_maximized: bool = True
@@ -130,6 +134,11 @@ class AppConfig:
     #: session is running, e.g. "F8" or "Ctrl+Shift+S". Empty turns it off.
     #: Not F12: Windows reserves it for debuggers. Windows only.
     screenshot_hotkey: str = "F8"
+    #: Where LEProc.exe (Locale Emulator) and ntleas.exe (NTLEA) are, for
+    #: games set to launch through one of them. Asked for the first time a
+    #: game needs it.
+    locale_emulator_path: str = ""
+    ntlea_path: str = ""
     #: Ask GitHub once a day whether a newer VNPresence has been released.
     #: The check is read-only and nothing is ever downloaded without a yes.
     check_updates: bool = True

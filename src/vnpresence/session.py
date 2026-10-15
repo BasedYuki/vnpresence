@@ -462,7 +462,7 @@ class GameSession:
             if tracked is None:
                 raise LaunchError(f"{self.profile.title} does not seem to be running")
             return tracked
-        process = launch(self.profile)
+        process = launch(self.profile, self.config)
         tracked = resolve_tracked_process(self.profile, process)
         if tracked is None:
             raise LaunchError(

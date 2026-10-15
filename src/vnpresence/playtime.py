@@ -13,7 +13,7 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,10 @@ from .config import config_dir
 
 log = logging.getLogger(__name__)
 
+#: How many days of per-day history each game keeps: enough for a year of
+#: charts, small enough that the file stays a few kilobytes.
+KEEP_DAYS = 400
+
 @dataclass
 class Entry:
     """What is known about one game's reading history."""
@@ -30,13 +34,20 @@ class Entry:
     seconds: float = 0.0
     sessions: int = 0
     last_played: str = ""
+    #: Seconds read on each calendar day, "2026-10-15": 5400. Only time
+    #: counted from 0.17 on is here - the total above can be older, or typed
+    #: in by hand, and the chart says so rather than pretending.
+    days: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "seconds": round(self.seconds, 1),
             "sessions": self.sessions,
             "last_played": self.last_played,
         }
+        if self.days:
+            data["days"] = {day: round(value, 1) for day, value in sorted(self.days.items())}
+        return data
 
     @classmethod
     def from_dict(cls, data: Any) -> Entry:
@@ -54,7 +65,28 @@ class Entry:
             seconds=max(seconds, 0.0),
             sessions=max(sessions, 0),
             last_played=str(data.get("last_played") or ""),
+            days=_days(data.get("days")),
         )
+
+
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _days(raw: Any) -> dict[str, float]:
+    """The per-day history, keeping only entries that are what they claim."""
+    if not isinstance(raw, dict):
+        return {}
+    days: dict[str, float] = {}
+    for day, value in raw.items():
+        if not _DAY.fullmatch(str(day)):
+            continue
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            continue
+        if seconds > 0:
+            days[str(day)] = seconds
+    return days
 
 
 class Playtime:
@@ -117,6 +149,15 @@ class Playtime:
         entries = self.load()
         entry = entries.get(game_id, Entry())
         entry.seconds = max(entry.seconds + seconds, 0.0)
+        today = time.strftime("%Y-%m-%d")
+        day = max(entry.days.get(today, 0.0) + seconds, 0.0)
+        if day > 0:
+            entry.days[today] = day
+        else:
+            entry.days.pop(today, None)
+        if len(entry.days) > KEEP_DAYS:
+            for old in sorted(entry.days)[: len(entry.days) - KEEP_DAYS]:
+                del entry.days[old]
         if new_session:
             entry.sessions += 1
         entry.last_played = time.strftime("%Y-%m-%dT%H:%M:%S")

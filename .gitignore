@@ -18,3 +18,5 @@ verify_focus_report.txt
 Claude outputs/
 verify_screenshots_report.txt
 .verify-screenshots-home/
+verify_share_report.txt
+.verify-share-home/

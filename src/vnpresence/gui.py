@@ -31,7 +31,17 @@ from .emulators import label as emulator_label
 from .emulators import running as running_emulators
 from .launcher import LaunchError
 from .library import Library
-from .library_view import Card, card_for, last_played_key, row_values, vndb_page
+from .library_view import (
+    DEFAULT_COVER_WIDTH,
+    MAX_COVER_WIDTH,
+    MIN_COVER_WIDTH,
+    Card,
+    card_for,
+    cover_size,
+    last_played_key,
+    row_values,
+    vndb_page,
+)
 from .models import GameProfile, PrivacyMode, looks_like_vndb_ref, normalise_vndb_id
 from .notes import read_note, write_note
 from .playtime import Playtime, format_reading_time, parse_duration
@@ -46,10 +56,11 @@ log = logging.getLogger(__name__)
 #: redrawing the same numbers.
 REFRESH_WHILE_PLAYING = 60_000  # milliseconds
 
-#: One cover in the grid, in pixels. Portrait, the shape of a game box.
-COVER_SIZE = (150, 213)
-#: A tile is the cover plus room around it for the title and the time.
-TILE_WIDTH = COVER_SIZE[0] + 24
+#: One cover in the grid at the default size, in pixels. Portrait, the shape
+#: of a game box; the size slider changes it.
+COVER_SIZE = cover_size(DEFAULT_COVER_WIDTH)
+#: Room around a cover inside its tile.
+TILE_PADDING = 24
 
 #: The window's size when it is not maximized and has never been resized.
 DEFAULT_GEOMETRY = "1040x680"
@@ -163,6 +174,9 @@ class App(tk.Tk):
         header.pack(fill="x")
         ttk.Label(header, text="Your library", style="Heading.TLabel").pack(side="left")
         ttk.Button(header, text="Updates", command=self.check_for_updates).pack(side="right")
+        # Where the program lives: source, issues, releases.
+        ttk.Button(header, text="GitHub \u2197", command=self.open_project_page).pack(
+            side="right", padx=(0, 6))
         self.theme_var = tk.StringVar(value=theme.get(self.config_data.theme).label)
         theme_box = ttk.Combobox(
             header, textvariable=self.theme_var, values=theme.labels(),
@@ -183,6 +197,18 @@ class App(tk.Tk):
                 filter_row, text=text, value=value, variable=self.view_var,
                 style="View.Toolbutton", command=self.set_view,
             ).pack(side="left", padx=(0, 4))
+        # How big the covers are, for the grid only: a slider, and Ctrl + the
+        # mouse wheel over the shelf. Remembered like the view itself.
+        self.size_box = ttk.Frame(filter_row)
+        ttk.Label(self.size_box, text="Size", style="Muted.TLabel").pack(side="left", padx=(8, 4))
+        self.cover_width_var = tk.DoubleVar(value=self._cover_size()[0])
+        self.size_scale = ttk.Scale(
+            self.size_box, from_=MIN_COVER_WIDTH, to=MAX_COVER_WIDTH, length=120,
+            orient="horizontal", variable=self.cover_width_var,
+            command=lambda _v: self._cover_width_moved(),
+        )
+        self.size_scale.pack(side="left")
+        self.size_scale.bind("<ButtonRelease-1>", lambda _e: self._save_cover_width())
         self.filter_var = tk.StringVar()
         self.filter_entry = ttk.Entry(filter_row, textvariable=self.filter_var)
         self.filter_entry.pack(side="left", fill="x", expand=True, padx=(8, 0))
@@ -395,9 +421,51 @@ class App(tk.Tk):
         if self.view_var.get() == "grid":
             self.list_frame.pack_forget()
             self.grid_frame.pack(fill="both", expand=True)
+            with contextlib.suppress(Exception):
+                self.size_box.pack(side="left", before=self.filter_entry)
         else:
             self.grid_frame.pack_forget()
             self.list_frame.pack(fill="both", expand=True)
+            with contextlib.suppress(Exception):
+                self.size_box.pack_forget()
+
+    # -- cover size ---------------------------------------------------------
+    def _cover_size(self) -> tuple[int, int]:
+        return cover_size(getattr(self.config_data, "grid_cover_width", DEFAULT_COVER_WIDTH))
+
+    def set_cover_width(self, width, *, save: bool = True) -> None:
+        """Resize every cover in the grid, and keep the choice."""
+        new = cover_size(width)
+        if new != self._cover_size():
+            self.config_data.grid_cover_width = new[0]
+            # Covers at the old size are not coming back; do not hoard them.
+            getattr(self, "_tile_cache", {}).clear()
+            with contextlib.suppress(Exception):
+                self.cover_width_var.set(new[0])
+            self._redraw_grid_soon()
+        if save:
+            self._save_cover_width()
+
+    def _cover_width_moved(self) -> None:
+        """The slider is being dragged: follow it, but save only on release."""
+        self.set_cover_width(self.cover_width_var.get(), save=False)
+
+    def _save_cover_width(self) -> None:
+        with contextlib.suppress(Exception):
+            self.config_data.save()
+
+    def _redraw_grid_soon(self) -> None:
+        """Dragging fires dozens of times a second; draw once it settles."""
+        pending = getattr(self, "_resize_job", None)
+        if pending is not None:
+            with contextlib.suppress(Exception):
+                self.after_cancel(pending)
+        self._resize_job = self.after(120, self._redraw_grid)
+
+    def _redraw_grid(self) -> None:
+        self._resize_job = None
+        if self.view_var.get() == "grid":
+            self.refresh_grid()
 
     def _build_grid(self) -> None:
         """A scrolling shelf of covers: a canvas, with a frame of tiles inside."""
@@ -426,6 +494,8 @@ class App(tk.Tk):
         self._columns = 0
 
     def _wheel(self, event) -> str:
+        if getattr(event, "state", 0) & 0x0004:  # Ctrl held: resize, not scroll
+            return self._zoom_wheel(event)
         if getattr(event, "num", None) == 4:
             step = -3
         elif getattr(event, "num", None) == 5:
@@ -433,6 +503,12 @@ class App(tk.Tk):
         else:
             step = -int(event.delta / 40) or (-1 if event.delta > 0 else 1)
         self.grid_canvas.yview_scroll(step, "units")
+        return "break"
+
+    def _zoom_wheel(self, event) -> str:
+        """Ctrl + wheel: bigger covers up, smaller covers down."""
+        up = getattr(event, "num", None) == 4 or getattr(event, "delta", 0) > 0
+        self.set_cover_width(self._cover_size()[0] + (15 if up else -15))
         return "break"
 
     def refresh_grid(self, shown=None, history=None) -> None:
@@ -464,7 +540,8 @@ class App(tk.Tk):
         cover = ttk.Label(tile, image=image, style="Tile.TLabel")
         cover.pack()
         name = ttk.Label(tile, text=card.title, style="Tile.TLabel",
-                         wraplength=COVER_SIZE[0], justify="center", anchor="center")
+                         wraplength=self._cover_size()[0], justify="center",
+                         anchor="center")
         name.pack(fill="x", pady=(6, 0))
         played = ttk.Label(tile, text=card.time_played if card.time_played != "-" else "",
                            style="TileMuted.TLabel", anchor="center")
@@ -479,8 +556,9 @@ class App(tk.Tk):
             widget.bind("<Button-5>", self._wheel)
         return tile
 
-    def _tile_image(self, card: Card, size=COVER_SIZE):
+    def _tile_image(self, card: Card, size=None):
         """The cover as a Tk image - or a card with the title on it."""
+        size = size or self._cover_size()
         path = None if card.hide_cover else covers.cached(card.cover_url)
         key = (str(path), card.title, size, self.palette.name,
                path.stat().st_mtime if path else 0)
@@ -504,8 +582,9 @@ class App(tk.Tk):
 
     def _layout_grid(self) -> None:
         """As many columns as fit; recomputed when the window is resized."""
-        width = max(self.grid_canvas.winfo_width(), TILE_WIDTH)
-        columns = max(width // (TILE_WIDTH + 12), 1)
+        tile_width = self._cover_size()[0] + TILE_PADDING
+        width = max(self.grid_canvas.winfo_width(), tile_width)
+        columns = max(width // (tile_width + 12), 1)
         self.grid_canvas.itemconfigure(self._grid_window, width=width)
         if columns == self._columns:
             return
@@ -611,6 +690,12 @@ class App(tk.Tk):
                 self._details.destroy()
         self._details = DetailsWindow(self, profile)
 
+    def open_project_page(self) -> None:
+        """VNPresence on GitHub - the source, the issues, the releases."""
+        from .update import PROJECT_PAGE
+
+        open_url(PROJECT_PAGE)
+
     def open_vndb_page(self) -> None:
         """The game's VNDB entry in the browser - for logging it there."""
         profile = self.selected_profile()
@@ -688,6 +773,10 @@ class App(tk.Tk):
         palette = theme.by_label(self.theme_var.get())
         self.palette = theme.apply(self, palette.name)
         self.tree.tag_configure("odd", background=self.palette.stripe)
+        # An open game page is drawn in the old colours: draw it again.
+        details = getattr(self, "_details", None)
+        if details is not None:
+            _quietly(details.rebuild)
         # Placeholder cards are drawn in the theme's colours: draw them again.
         getattr(self, "_tile_cache", {}).clear()
         with contextlib.suppress(Exception):

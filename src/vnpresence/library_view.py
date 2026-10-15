@@ -18,6 +18,13 @@ from .models import GameMetadata, GameProfile, PrivacyMode, normalise_vndb_id
 from .playtime import Entry, format_reading_time
 
 NEVER = "Never"
+
+#: The grid's cover width, in pixels: the slider's ends and where it starts.
+MIN_COVER_WIDTH = 90
+MAX_COVER_WIDTH = 300
+DEFAULT_COVER_WIDTH = 150
+#: A game box is portrait: about 1.42 times as tall as it is wide.
+COVER_RATIO = 1.42
 VNDB = "https://vndb.org"
 
 
@@ -144,3 +151,17 @@ def vndb_page(profile: GameProfile) -> tuple[str, bool]:
         except ValueError:
             pass
     return f"{VNDB}/v?q={quote_plus(profile.title or profile.id)}", False
+
+
+def cover_size(width) -> tuple[int, int]:
+    """The grid cover at this width, clamped to what the slider allows.
+
+    Whatever a hand-edited config says - a string, a negative number, a
+    10000 - comes back as a size the grid can draw.
+    """
+    try:
+        width = int(round(float(width)))
+    except (TypeError, ValueError):
+        width = DEFAULT_COVER_WIDTH
+    width = min(max(width, MIN_COVER_WIDTH), MAX_COVER_WIDTH)
+    return width, round(width * COVER_RATIO)

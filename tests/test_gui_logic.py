@@ -820,3 +820,40 @@ def test_open_on_vndb_with_nothing_selected_does_nothing(app, monkeypatch):
     monkeypatch.setattr(gui, "open_url", lambda url: pytest.fail("nothing to open"))
     app.tree = Selection()
     app.open_vndb_page()
+
+
+def test_the_cover_size_is_remembered_and_clamped(app):
+    from vnpresence.config import AppConfig
+
+    app.config_data = AppConfig()
+    app.cover_width_var = Box(150)
+    app.view_var = Box("list")
+    app.after = lambda ms, fn: None
+    app.set_cover_width(220)
+    assert AppConfig.load().grid_cover_width == 220
+    app.set_cover_width(9999)
+    assert AppConfig.load().grid_cover_width == 300
+
+
+def test_ctrl_wheel_resizes_instead_of_scrolling(app):
+    from vnpresence.config import AppConfig
+
+    app.config_data = AppConfig()
+    app.cover_width_var = Box(150)
+    app.view_var = Box("list")
+    app.after = lambda ms, fn: None
+
+    class Wheel:
+        state = 0x0004  # Ctrl
+        delta = 120
+        num = None
+
+    assert app._wheel(Wheel()) == "break"
+    assert app.config_data.grid_cover_width == 165
+
+
+def test_the_github_button_opens_the_project(app, monkeypatch):
+    opened = []
+    monkeypatch.setattr(gui, "open_url", opened.append)
+    app.open_project_page()
+    assert opened == ["https://github.com/BasedYuki/vnpresence"]

@@ -24,13 +24,17 @@ USER_AGENT = "VNPresence (+https://github.com/BasedYuki/vnpresence)"
 
 FIELDS = (
     "id, title, alttitle, image.url, image.sexual, image.violence, "
-    "description, released, languages, platforms, length, rating, votecount, "
+    "description, released, languages, platforms, length, length_minutes, rating, "
+    "votecount, "
     "tags.name, tags.category, tags.rating, tags.spoiler"
 )
 
 #: Bumped whenever the shape of a cached entry changes, so an old cache is
 #: refetched instead of silently missing or carrying stale fields.
-CACHE_SCHEMA = 4
+CACHE_SCHEMA = 5
+#: Older cache entries that are still fine to draw a cover from: peek() reads
+#: them, get() refetches them for the fields they are missing.
+DRAWABLE_SCHEMAS = (4, CACHE_SCHEMA)
 
 LENGTH_LABELS = {
     1: "Very short (< 2h)",
@@ -86,7 +90,7 @@ class VNDBClient:
             data = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return None
-        if not isinstance(data, dict) or data.get("_schema") != CACHE_SCHEMA:
+        if not isinstance(data, dict) or data.get("_schema") not in DRAWABLE_SCHEMAS:
             return None
         return GameMetadata.from_dict(data)
 
@@ -186,12 +190,20 @@ def parse_vn(item: dict[str, Any]) -> GameMetadata:
         languages=list(item.get("languages") or []),
         platforms=list(item.get("platforms") or []),
         length=LENGTH_LABELS.get(length) if isinstance(length, int) else None,
+        length_minutes=_minutes(item.get("length_minutes")),
         rating=round(rating / 10, 1) if isinstance(rating, (int, float)) else None,
         votes=int(item.get("votecount") or 0),
         nsfw=is_nsfw(item),
         url=f"https://vndb.org/{item.get('id')}" if item.get("id") else None,
         source="vndb",
     )
+
+
+def _minutes(value: Any) -> int | None:
+    """VNDB's average play time - only when it is a real, positive number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return int(value)
 
 
 def is_nsfw(item: dict[str, Any]) -> bool:

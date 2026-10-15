@@ -39,6 +39,8 @@ log = logging.getLogger(__name__)
 REPO = "BasedYuki/vnpresence"
 RELEASES_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
+#: The project's home: source, issues, and how to help.
+PROJECT_PAGE = f"https://github.com/{REPO}"
 
 #: Names of the assets we know how to install, best first.
 WINDOWED_ASSET = "VNPresence.exe"

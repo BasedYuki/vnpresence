@@ -19,8 +19,11 @@ and a link to its VNDB page - the way a normal game does.
 - A plugin API for anything the defaults do not cover
 - Works with emulated visual novels too - PSP, PS2, PS3, Vita, Switch
 - Your library as a sortable list or a shelf of covers, with time played, last played and sessions
-- A details page per game, and an F8 screenshot gallery for each novel
-- Three themes, including a deep-blue-and-gold one for the Kingdom Hearts fans
+- A page per game: time played per day, progress against VNDB's average, your
+  VNDB status and rating, and an F8 screenshot gallery you can copy and share from
+- Start Japanese games through Locale Emulator or NTLEA with one click
+- Nine themes, from Sakura pink to Forest green, and a deep-blue-and-gold one
+  for the Kingdom Hearts fans
 - Updates itself: it tells you when a new build is out and installs it
 - MIT licensed, no telemetry, nothing phoning home except VNDB
 
@@ -162,7 +165,7 @@ It opens maximized, and remembers how you left it: maximized, or the size you
 dragged it to.
 
 ```
-┌─ Your library ─────────────────────────────── Theme [Midnight ▾] [Updates] ─┐
+┌─ Your library ──────────────────── Theme [Midnight ▾] [GitHub ↗] [Updates] ─┐
 │ [☰ List][▦ Grid] [ filter…                                    ]  [Clear]    │
 │ ┌────────────────────────────────────────────────────────────────────────┐  │
 │ │ Game                Time played  Last played  Sessions  Privacy VNDB   │  │
@@ -184,13 +187,15 @@ dragged it to.
   folder, and work offline after that. A game with no cover, or one set to
   `private`, gets a plain card with its name - so the grid is safe to have on
   screen while you stream.
+- **Cover size.** In the grid, the **Size** slider - or `Ctrl` + the mouse
+  wheel over the covers - makes them bigger or smaller, from a wall of small
+  boxes to a few big ones. The size is remembered.
 - **Time played, Last played, Sessions.** Last played reads *Today*,
   *Yesterday*, *3 days ago*, then a date. Click a heading to sort by it - the
   most played, the most recent, the most returned-to come first - and click
   again to reverse.
-- **Details…** (or `Ctrl+I`, or right-click a game) opens a page for that one
-  novel: the big cover, everything above, its length and rating from VNDB, the
-  route you are on, and its screenshots.
+- **Details…** (or `Ctrl+I`, or right-click a game) opens the game's page -
+  see below.
 - **Open on VNDB** (right-click a game, or `Ctrl+O`) opens its VNDB page in
   your browser - handy for logging it in your VNDB list. A game that is not
   linked yet opens a VNDB search for its name instead.
@@ -198,6 +203,58 @@ dragged it to.
 - **Type to filter** - by name or by id. `Ctrl+F` jumps to the box, `F5` refreshes.
 - **Enter** or a **double-click** plays, **Delete** removes, **right-click** for
   everything else.
+- **GitHub ↗** opens this project: the source, the releases, and where to
+  report a bug.
+
+### A game's page
+
+```
+┌──────────────────────────────┐ ┌ TOTAL ─────┐┌ 7 DAYS ────┐┌ SESSIONS ──┐┌ LAST ──────┐
+│ ┌─────┐ Aiyoku no Eustia     │ │ 32h 09m    ││ 5h 09m     ││ 31         ││ 2 days ago │
+│ │cover│ D:\Games\...\BGI.exe │ └────────────┘└────────────┘└────────────┘└────────────┘
+│ │     │ [VNDB v3770][▶ Play] │ ┌ Progress ────────────────────────────────────────────┐
+│ └─────┘                      │ │ ████████████████████████████████░░░░░░░  80% · ~40h  │
+└──────────────────────────────┘ └──────────────────────────────────────────────────────┘
+┌ Your VNDB list ──────────────┐ ┌ Time played   [30 days][12 weeks] ───────────────────┐
+│ Status [Playing][Finished]   │ │ 2h ┤               ▇                                 │
+│        [Stalled][Dropped]    │ │ 1h ┤  ▇   ▅    ▇  ▃▇ ▇ ▆   ▇ ▇                       │
+│ Rating [9 ▾]                 │ │ 0m ┼──▇─▂─▇─▃──▇──▇▇─▇─▇───▇─▇──                     │
+└──────────────────────────────┘ │     13 Sep   20 Sep   27 Sep  4 Oct                  │
+┌ Launch with ─────────────────┐ │                                                      │
+│ [Normal][Locale Emulator]    │ │ History since 14 Aug.                                │
+│ [NTLEA]                      │ └──────────────────────────────────────────────────────┘
+└──────────────────────────────┘
+┌ Screenshots 4   [Open][Show in folder][Copy][Share] ──────────────────────────────────┐
+│ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐                                                   │
+│ └──────┘ └──────┘ └──────┘ └──────┘                                                   │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **The numbers**: total time played, the last seven days, sessions, and when
+  you last played.
+- **Progress** compares your time with VNDB's average for that novel - an
+  estimate, and labelled as one: reading speed, skipping and how many routes
+  you count all move it.
+- **Time played** is a chart of the last 30 days, or the last 12 weeks. It
+  starts filling from 0.17 on; time from before that is in the total, just not
+  in the chart, and the page says so instead of inventing a history.
+- **Your VNDB list**: pick *Playing*, *Finished*, *Stalled* or *Dropped* and a
+  rating, and they are saved to your list on VNDB. Clicking the lit status
+  again takes it off. It needs a token, made once: on vndb.org, open
+  **My Profile → Applications**, make a token with **Access to my list** and
+  **Write to my list** ticked, and paste it when the page asks. It is kept in
+  `vndb-account.json` in the VNPresence folder (not in `config.yaml`, which
+  people paste into bug reports) and never logged; **disconnect** on the page
+  forgets it.
+- **Launch with**: *Normal*, or through **Locale Emulator** or **NTLEA** - for
+  Japanese games whose text comes out as garbage, or that refuse to start, on
+  a non-Japanese Windows. The first time, it asks where `LEProc.exe` or
+  `ntleas.exe` is. Play then starts the game through it, and the presence and
+  the clock follow the game itself, not the wrapper.
+- **Screenshots**: click one, then **Open**, **Show in folder** (Explorer, with
+  the file selected), **Copy** (the picture itself - paste it straight into
+  Discord) or **Share** (the Windows share sheet). Right-click a screenshot for
+  the same. Double-click opens it.
 
 ### Screenshots
 
@@ -209,8 +266,8 @@ own gallery:
 %APPDATA%\VNPresence\screenshots\<game id>\2026-10-15 21-30-05.png
 ```
 
-The details page shows them; click one to open it, or **Screenshots folder**
-for all of them. From the command line: `vnpresence screenshots <game> --open`.
+The game's page shows them, with Copy, Share and Show in folder for each, and
+**Open folder** for all of them. From the command line: `vnpresence screenshots <game> --open`.
 
 The key is only claimed while a game is being tracked, and handed back when it
 closes - a key held all evening would quietly stop working in every other
@@ -228,7 +285,8 @@ the screen straight to the graphics card and leaves nothing to copy. Switch the
 game to windowed or borderless - most visual novels offer it - and it works.
 
 To check it all on your own machine (the window search, display scaling, and
-the key), run `python tools/verify_screenshots.py`.
+the key), run `python tools/verify_screenshots.py`; for Copy, Share and Show in
+folder, `python tools/verify_share.py`.
 
 #### Themes
 
@@ -237,6 +295,12 @@ the key), run `python tools/verify_screenshots.py`.
 | **Midnight** | The default. Near-black with the app's own purple. |
 | **Daylight** | The same window in daylight. |
 | **Kingdom Hearts** | Deep ocean blue and gold. An original palette of eight colours inspired by those games - no artwork, logos or characters of theirs are used. |
+| **Sakura** | Light: soft pink, with a deep rose accent. |
+| **Lilac Dusk** | Dark slate, pale lilac accent. |
+| **Steel** | Blue-grey, sky-blue accent. |
+| **Lavender** | Light: cool grey-white, violet accent. |
+| **Navy** | Dark navy, periwinkle accent. |
+| **Forest** | Nearly black green, mint accent. |
 
 Pick one from the **Theme** box in the window, or:
 
@@ -487,6 +551,11 @@ launcher_grace: 20
 ```
 
 Find the real name in Task Manager while the game runs.
+
+For a Japanese game that needs Locale Emulator or NTLEA, you do not have to
+point the profile at the wrapper any more: keep `path` on the game, and pick
+the wrapper under **Launch with** on the game's page (or write
+`launch_with: locale-emulator` / `launch_with: ntlea` in the profile).
 
 Examples of complete profiles live in [`examples/games/`](examples/games/).
 
@@ -835,6 +904,10 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | It matched the wrong entry with the same name | Repoint it with `vnpresence link <game> <vndb link>`, or **VNDB link…** in the window. The link is exact; a name is not |
 | The reading total keeps rising while I am in another window | Run `vnpresence focus <game>` and move around: it prints which window has the focus, how long since you touched anything, and what that counts as. If every line says `reading`, check `focused_time_only` in `config.yaml` and that you are on 0.14.0 or newer (`vnpresence --version`) |
 | It says `Idle` while I am reading | You are on a long auto-mode scene, or reading with a controller - neither reaches `GetLastInputInfo`. Raise `idle_after` in `config.yaml`, or set it to `0` |
+| Share copies the picture instead of opening the share window | Windows would not open its share sheet from here (older Windows 10 builds, or a policy that turns sharing off). The picture is on the clipboard instead - paste it. `python tools/verify_share.py` says which part failed |
+| "VNDB did not accept the token" | It was deleted or mistyped. Make a new one under My Profile → Applications on vndb.org, with **Write to my list** ticked |
+| The chart is empty for a game I have played for years | It counts from 0.17 on. Older time is in the total, not in the chart |
+| A Japanese game shows garbled text or will not start | Set **Launch with** to Locale Emulator or NTLEA on its page |
 | Screenshots come out black | The game is in exclusive fullscreen. Set it to windowed or borderless and they work |
 | F8 does nothing | Another program already owns it - the status line says so when a session starts. Set `screenshot_hotkey` in `config.yaml` to another key |
 | The grid shows names but no covers | They are still downloading (once, in the background), or the game is set to `private`. If it lasts, `vnpresence rematch --all` |

@@ -699,7 +699,15 @@ def selfcheck() -> None:
     except Exception as exc:  # pragma: no cover
         problems.append(f"Tk images: {type(exc).__name__}: {exc}")
     try:
-        from . import details_window, library_view, screenshots  # noqa: F401
+        from . import (  # noqa: F401
+            chart,
+            details_window,
+            library_view,
+            screenshots,
+            shell,
+            stats,
+            vndb_list,
+        )
     except Exception as exc:  # pragma: no cover
         problems.append(f"modules: {exc}")
     if problems:
