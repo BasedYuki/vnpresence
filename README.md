@@ -19,10 +19,11 @@ and a link to its VNDB page - the way a normal game does.
 - A plugin API for anything the defaults do not cover
 - Works with emulated visual novels too - PSP, PS2, PS3, Vita, Switch
 - Your library as a sortable list or a shelf of covers, with time played, last played and sessions
-- A page per game: time played per day, progress against VNDB's average, your
-  VNDB status and rating, and an F8 screenshot gallery you can copy and share from
+- A page per game, coloured by its own cover: a heatmap of the days you played,
+  streaks, your routes and notes, every session, VNDB's details with spoilers
+  held back, your VNDB status and rating, and an F8 screenshot gallery
 - Start Japanese games through Locale Emulator or NTLEA with one click
-- Nine themes, from Sakura pink to Forest green, and a deep-blue-and-gold one
+- Nine themes, from Ink & Paper to Neon, and a deep-blue-and-gold one
   for the Kingdom Hearts fans
 - Updates itself: it tells you when a new build is out and installs it
 - MIT licensed, no telemetry, nothing phoning home except VNDB
@@ -209,52 +210,64 @@ dragged it to.
 ### A game's page
 
 ```
-┌──────────────────────────────┐ ┌ TOTAL ─────┐┌ 7 DAYS ────┐┌ SESSIONS ──┐┌ LAST ──────┐
-│ ┌─────┐ Aiyoku no Eustia     │ │ 32h 09m    ││ 5h 09m     ││ 31         ││ 2 days ago │
-│ │cover│ D:\Games\...\BGI.exe │ └────────────┘└────────────┘└────────────┘└────────────┘
-│ │     │ [VNDB v3770][▶ Play] │ ┌ Progress ────────────────────────────────────────────┐
-│ └─────┘                      │ │ ████████████████████████████████░░░░░░░  80% · ~40h  │
-└──────────────────────────────┘ └──────────────────────────────────────────────────────┘
-┌ Your VNDB list ──────────────┐ ┌ Time played   [30 days][12 weeks] ───────────────────┐
-│ Status [Playing][Finished]   │ │ 2h ┤               ▇                                 │
-│        [Stalled][Dropped]    │ │ 1h ┤  ▇   ▅    ▇  ▃▇ ▇ ▆   ▇ ▇                       │
-│ Rating [9 ▾]                 │ │ 0m ┼──▇─▂─▇─▃──▇──▇▇─▇─▇───▇─▇──                     │
-└──────────────────────────────┘ │     13 Sep   20 Sep   27 Sep  4 Oct                  │
-┌ Launch with ─────────────────┐ │                                                      │
-│ [Normal][Locale Emulator]    │ │ History since 14 Aug.                                │
-│ [NTLEA]                      │ └──────────────────────────────────────────────────────┘
-└──────────────────────────────┘
-┌ Screenshots 4   [Open][Show in folder][Copy][Share] ──────────────────────────────────┐
-│ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐                                                   │
-│ └──────┘ └──────┘ └──────┘ └──────┘                                                   │
+┌───────────────────────────────────────────────────────────────────────────────────────┐
+│ ┌──────┐  Aiyoku no Eustia             (the cover, blurred, fills the back)           │
+│ │cover │  穢翼のユースティア · August · 2011                                                   │
+│ │      │  Now reading: Colette                                                        │
+│ └──────┘  [▶ Play] [VNDB v3770]                                                       │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+ PLAYED 32h 09m │ LAST 7 DAYS 7h 25m │ SESSIONS 31 │ LAST PLAYED Today │ STREAK 7 days
+ [Overview] Routes & Notes  Sessions  About  Screenshots  Settings
+┌───────────────────────────────────────────────────────────────────────────────────────┐
+│ Last six months                          │ How far through       78% · ~41h           │
+│      May    Jun    Jul    Aug    Sep    Oct  │ ██████████████████░░░░░                │
+│ Mon  ▫▫▫▫▫▫▫▫▫▫▪▪▫▪▫▪■▪▪▫■▪▫■■             │                                          │
+│ Wed  ▫▫▫▫▫▫▫▫▪▫▪■▪■■▪▫■▪▪▫▪■▪▫▪             │ On your VNDB list                       │
+│ Fri  ▫▫▫▫▫▫▫▫▫▪▫▪▫▪▫▫▪▫▪▪▪▫■▫■              │ [Playing][Finished][Stalled]            │
+│ Current streak 7 · Longest 8 · Best day 2h 11m │ [Dropped]  Rating [9 ▾]              │
 └───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **The numbers**: total time played, the last seven days, sessions, and when
-  you last played.
-- **Progress** compares your time with VNDB's average for that novel - an
-  estimate, and labelled as one: reading speed, skipping and how many routes
-  you count all move it.
-- **Time played** is a chart of the last 30 days, or the last 12 weeks. It
-  starts filling from 0.17 on; time from before that is in the total, just not
-  in the chart, and the page says so instead of inventing a history.
-- **Your VNDB list**: pick *Playing*, *Finished*, *Stalled* or *Dropped* and a
-  rating, and they are saved to your list on VNDB. Clicking the lit status
-  again takes it off. It needs a token, made once: on vndb.org, open
-  **My Profile → Applications**, make a token with **Access to my list** and
-  **Write to my list** ticked, and paste it when the page asks. It is kept in
-  `vndb-account.json` in the VNPresence folder (not in `config.yaml`, which
-  people paste into bug reports) and never logged; **disconnect** on the page
-  forgets it.
-- **Launch with**: *Normal*, or through **Locale Emulator** or **NTLEA** - for
-  Japanese games whose text comes out as garbage, or that refuse to start, on
-  a non-Japanese Windows. The first time, it asks where `LEProc.exe` or
-  `ntleas.exe` is. Play then starts the game through it, and the presence and
-  the clock follow the game itself, not the wrapper.
+Every novel's page takes its colour from its own cover: the Play button, the
+lit tab and the heatmap borrow the cover's strongest colour (nudged until it
+reads well on your theme), so no two pages look the same. A private or 18+
+game shows no cover here at all - just a gradient - and none of VNDB's
+details that would say which novel it is.
+
+- **The numbers**: time played, the last seven days, sessions, when you last
+  played, and your current streak of days in a row.
+- **Overview**: a heatmap of the last six months, one square per day, darker
+  for longer evenings - point at a square for the exact time. Under it your
+  current and longest streak and your best day. Beside it, how far through you
+  are next to VNDB's average length (a guide, not a finish line), and your
+  VNDB list status and rating.
+- **Routes & Notes**: write the novel's routes, tick them off as you finish
+  them, and Discord shows **Routes 2/5** (never for a private game).
+  **Reading** next to a route makes it the route on your activity. Notes are
+  free text, saved as you type, and never leave your computer.
+- **Sessions**: every time you played - the day, from when to when, the time
+  that counted (game in front, you there) and how long the game was open.
+  The last ten, or all of them.
+- **About**: VNDB's description, developer, release, length, rating and tags.
+  Anything VNDB marks as a spoiler stays hidden until you click
+  **Show spoilers**.
 - **Screenshots**: click one, then **Open**, **Show in folder** (Explorer, with
   the file selected), **Copy** (the picture itself - paste it straight into
-  Discord) or **Share** (the Windows share sheet). Right-click a screenshot for
-  the same. Double-click opens it.
+  Discord) or **Share** (the Windows share sheet). Right-click for the same.
+- **Settings**: **Launch with** *Normal*, **Locale Emulator** or **NTLEA** -
+  for Japanese games whose text comes out as garbage, or that refuse to start.
+  The first time, it asks where `LEProc.exe` or `ntleas.exe` is. The presence
+  and the clock follow the game itself, not the wrapper.
+
+The heatmap and the session list count from 0.17 and 0.18 on respectively;
+older time is in the total, and the page says so instead of inventing a
+history.
+
+Your VNDB list needs a token, made once: on vndb.org, open **My Profile →
+Applications**, make a token with **Access to my list** and **Write to my
+list** ticked, and paste it when the page asks. It is kept in
+`vndb-account.json` in the VNPresence folder (not in `config.yaml`, which people
+paste into bug reports) and never logged; **disconnect** on the page forgets it.
 
 ### Screenshots
 
@@ -295,12 +308,12 @@ folder, `python tools/verify_share.py`.
 | **Midnight** | The default. Near-black with the app's own purple. |
 | **Daylight** | The same window in daylight. |
 | **Kingdom Hearts** | Deep ocean blue and gold. An original palette of eight colours inspired by those games - no artwork, logos or characters of theirs are used. |
-| **Sakura** | Light: soft pink, with a deep rose accent. |
-| **Lilac Dusk** | Dark slate, pale lilac accent. |
-| **Steel** | Blue-grey, sky-blue accent. |
-| **Lavender** | Light: cool grey-white, violet accent. |
-| **Navy** | Dark navy, periwinkle accent. |
-| **Forest** | Nearly black green, mint accent. |
+| **Ink & Paper** | Light: an old paperback's cream page, brown-black ink, and the red of a name seal. |
+| **Matcha** | Light: pale green-cream, with a deep whisked-tea green. |
+| **Rainy Night** | Dark: cold blue-grey, and a turquoise like a sign reflected in a puddle. |
+| **Summer Dusk** | Dark: faded violet, with the orange of the last of the sun. |
+| **Neon** | Nearly black, with a hard fuchsia. |
+| **Crimson Moon** | Black with a red cast, and a blood-red accent. |
 
 Pick one from the **Theme** box in the window, or:
 
@@ -906,7 +919,7 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | It says `Idle` while I am reading | You are on a long auto-mode scene, or reading with a controller - neither reaches `GetLastInputInfo`. Raise `idle_after` in `config.yaml`, or set it to `0` |
 | Share copies the picture instead of opening the share window | Windows would not open its share sheet from here (older Windows 10 builds, or a policy that turns sharing off). The picture is on the clipboard instead - paste it. `python tools/verify_share.py` says which part failed |
 | "VNDB did not accept the token" | It was deleted or mistyped. Make a new one under My Profile → Applications on vndb.org, with **Write to my list** ticked |
-| The chart is empty for a game I have played for years | It counts from 0.17 on. Older time is in the total, not in the chart |
+| The heatmap is empty for a game I have played for years | It counts from 0.17 on. Older time is in the total, not in the heatmap |
 | A Japanese game shows garbled text or will not start | Set **Launch with** to Locale Emulator or NTLEA on its page |
 | Screenshots come out black | The game is in exclusive fullscreen. Set it to windowed or borderless and they work |
 | F8 does nothing | Another program already owns it - the status line says so when a session starts. Set `screenshot_hotkey` in `config.yaml` to another key |

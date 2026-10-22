@@ -700,10 +700,14 @@ def selfcheck() -> None:
         problems.append(f"Tk images: {type(exc).__name__}: {exc}")
     try:
         from . import (  # noqa: F401
+            banner,
             chart,
+            cover_colors,
             details_window,
+            journal,
             library_view,
             screenshots,
+            session_log,
             shell,
             stats,
             vndb_list,

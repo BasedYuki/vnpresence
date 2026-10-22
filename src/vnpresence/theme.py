@@ -97,78 +97,89 @@ PALETTES: dict[str, Palette] = {
         accent_text="#081434",
         border="#1d346f",
     ),
-    # Six more, two light and four dark, each one background family and one
-    # accent. The accents on the dark ones are pale, so the text on them is
-    # dark - white on a pastel would fail the contrast test, and rightly.
-    "sakura": Palette(
-        name="sakura",
-        label="Sakura",
-        background="#f8dde7",
-        surface="#fdf1f5",
-        text="#35202b",
-        muted="#7d5566",
-        accent="#ad3d67",
+    # Six originals. Each one is a mood first and a set of hex values second:
+    # a background family, one accent, and text tuned on both until the
+    # contrast tests pass. The pale accents on dark grounds carry dark text.
+    "ink-paper": Palette(
+        name="ink-paper",
+        label="Ink & Paper",
+        background="#efe6d2",  # an old paperback's page
+        surface="#f8f2e4",
+        text="#2b2118",  # brown-black ink
+        muted="#6e5d4a",
+        accent="#a8322d",  # the red of a name seal
+        accent_text="#fff8ee",
+        border="#ddd0b4",
+    ),
+    "matcha": Palette(
+        name="matcha",
+        label="Matcha",
+        background="#e8eddc",
+        surface="#f6f8ef",
+        text="#1f2a1b",
+        muted="#56634c",
+        accent="#3f6b35",  # whisked tea, deep
+        accent_text="#f4f8ec",
+        border="#d0d9bf",
+    ),
+    "rainy-night": Palette(
+        name="rainy-night",
+        label="Rainy Night",
+        background="#141b22",
+        surface="#1c2630",
+        text="#dde7ee",
+        muted="#8ea0ad",
+        accent="#4fd1c5",  # a sign reflected in a puddle
+        accent_text="#06201e",
+        border="#2a3743",
+    ),
+    "summer-dusk": Palette(
+        name="summer-dusk",
+        label="Summer Dusk",
+        background="#211a2c",
+        surface="#2c2339",
+        text="#f3e9f0",
+        muted="#b3a2bb",
+        accent="#ff9a52",  # the last of the sun
+        accent_text="#2a1406",
+        border="#3d3150",
+    ),
+    "neon": Palette(
+        name="neon",
+        label="Neon",
+        background="#0b0b10",
+        surface="#15151d",
+        text="#f1f0ff",
+        muted="#a09fbd",
+        accent="#ff3fa4",
+        accent_text="#1a0010",
+        border="#2a2a3a",
+    ),
+    "crimson-moon": Palette(
+        name="crimson-moon",
+        label="Crimson Moon",
+        background="#120a0c",
+        surface="#1d1013",
+        text="#f2e4e4",
+        muted="#b09294",
+        accent="#d63a46",
         accent_text="#ffffff",
-        border="#e9c3d2",
-    ),
-    "lilac-dusk": Palette(
-        name="lilac-dusk",
-        label="Lilac Dusk",
-        background="#282a35",
-        surface="#343744",
-        text="#eceaf6",
-        muted="#a5a3ba",
-        accent="#b09af0",
-        accent_text="#1b1530",
-        border="#454857",
-    ),
-    "steel": Palette(
-        name="steel",
-        label="Steel",
-        background="#2f343f",
-        surface="#3c414f",
-        text="#ecf0f6",
-        muted="#aab2c1",
-        accent="#93cfe3",
-        accent_text="#0f242c",
-        border="#4c5263",
-    ),
-    "lavender": Palette(
-        name="lavender",
-        label="Lavender",
-        background="#eceaf1",
-        surface="#f9f8fc",
-        text="#1f1c2c",
-        muted="#5f5b76",
-        accent="#7444e0",
-        accent_text="#ffffff",
-        border="#d8d4e4",
-    ),
-    "navy": Palette(
-        name="navy",
-        label="Navy",
-        background="#22253a",
-        surface="#2c3048",
-        text="#e8ebf8",
-        muted="#9ea6c6",
-        accent="#86a6f2",
-        accent_text="#101934",
-        border="#3b405b",
-    ),
-    "forest": Palette(
-        name="forest",
-        label="Forest",
-        background="#111516",
-        surface="#1b2223",
-        text="#e3ece9",
-        muted="#93a5a0",
-        accent="#86e0cf",
-        accent_text="#0b2420",
-        border="#2b3233",
+        border="#35191e",
     ),
 }
 
 DEFAULT = "midnight"
+
+#: Themes that existed once and were replaced, and the one each reader gets
+#: instead: light stays light, dark stays dark, the mood stays close.
+RETIRED = {
+    "sakura": "ink-paper",
+    "lavender": "matcha",
+    "lilac-dusk": "summer-dusk",
+    "steel": "rainy-night",
+    "navy": "rainy-night",
+    "forest": "crimson-moon",
+}
 
 
 def get(name: str | None) -> Palette:
@@ -177,7 +188,9 @@ def get(name: str | None) -> Palette:
     A config file can name a theme that a later version removed, and that is
     not worth refusing to open the window over.
     """
-    return PALETTES.get((name or "").strip().lower(), PALETTES[DEFAULT])
+    key = (name or "").strip().lower()
+    key = RETIRED.get(key, key)
+    return PALETTES.get(key, PALETTES[DEFAULT])
 
 
 def names() -> list[str]:
@@ -338,3 +351,52 @@ def apply(root, name: str | None = None):  # pragma: no cover - needs a real Tk
                     bordercolor=palette.border, padding=3)
     style.map("Card.TCombobox", fieldbackground=[("readonly", chip)])
     return palette
+
+
+def apply_page(root, palette: Palette) -> None:  # pragma: no cover - needs a real Tk
+    """Styles for a game's page alone, under the ``Page.`` prefix.
+
+    ttk styles belong to the whole program, so the page's own accent - taken
+    from its cover - gets its own names instead of repainting the main window.
+    """
+    from tkinter import ttk
+
+    style = ttk.Style(root)
+    chip = _mix(palette.surface, palette.background, 0.6)
+    style.configure("Page.Accent.TButton", background=palette.accent,
+                    foreground=palette.accent_text, relief="flat", padding=(16, 7),
+                    font=("Segoe UI", 10, "bold"))
+    style.map("Page.Accent.TButton",
+              background=[("pressed", palette.pressed),
+                          ("active", _mix(palette.accent, "#ffffff", 0.15))])
+    style.configure("Page.Chip.Toolbutton", background=chip, foreground=palette.text,
+                    padding=(10, 4), relief="flat")
+    style.map("Page.Chip.Toolbutton",
+              background=[("selected", palette.accent), ("active", palette.hover)],
+              foreground=[("selected", palette.accent_text), ("disabled", palette.muted)])
+    style.configure("Page.TNotebook", background=palette.background, borderwidth=0,
+                    tabmargins=(0, 0, 0, 0), lightcolor=palette.background,
+                    darkcolor=palette.background, bordercolor=palette.background)
+    style.configure("Page.TNotebook.Tab", background=palette.background,
+                    foreground=palette.muted, padding=(16, 8), borderwidth=0,
+                    lightcolor=palette.background, bordercolor=palette.background,
+                    font=("Segoe UI", 10, "bold"))
+    style.map("Page.TNotebook.Tab",
+              background=[("selected", palette.surface), ("active", palette.hover)],
+              foreground=[("selected", palette.accent)],
+              lightcolor=[("selected", palette.accent)])
+    style.configure("Page.Link.TLabel", background=palette.surface,
+                    foreground=palette.accent, font=("Segoe UI", 9, "underline"))
+    style.configure("Page.Tag.TLabel", background=chip, foreground=palette.text,
+                    padding=(8, 3))
+    style.configure("Page.TCheckbutton", background=palette.surface,
+                    foreground=palette.text, indicatorcolor=palette.background,
+                    focuscolor=palette.accent)
+    style.map("Page.TCheckbutton", indicatorcolor=[("selected", palette.accent)])
+    style.configure("Page.Treeview", background=palette.surface,
+                    fieldbackground=palette.surface, foreground=palette.text, rowheight=28,
+                    bordercolor=palette.border, relief="flat")
+    style.map("Page.Treeview", background=[("selected", palette.accent)],
+              foreground=[("selected", palette.accent_text)])
+    style.configure("Page.Treeview.Heading", background=palette.surface,
+                    foreground=palette.muted, relief="flat", padding=(8, 6))

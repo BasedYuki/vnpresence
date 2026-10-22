@@ -103,3 +103,13 @@ def test_mixing_is_bounded():
     assert theme._mix("#000000", "#ffffff", 1.0) == "#ffffff"
     assert theme._mix("#000000", "#ffffff", 5.0) == "#ffffff"  # clamped
     assert theme._mix("#000000", "#ffffff", 0.5) == "#808080"
+
+
+def test_a_retired_theme_becomes_its_nearest_replacement():
+    """Someone who picked Sakura in 0.17 opens 0.18 to a light theme, not a crash
+    and not a sudden switch to dark."""
+    assert theme.get("sakura").name == "ink-paper"
+    assert theme.get("navy").name == "rainy-night"
+    for old, new in theme.RETIRED.items():
+        assert new in theme.PALETTES
+        assert old not in theme.PALETTES

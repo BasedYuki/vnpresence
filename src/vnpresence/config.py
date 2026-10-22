@@ -118,8 +118,8 @@ class AppConfig:
     #: Set it to 0 to switch idle detection off and go by the focused window
     #: alone. Windows only.
     idle_after: float = 600.0
-    #: Window colours: "midnight", "daylight", "kingdom-hearts", "sakura",
-    #: "lilac-dusk", "steel", "lavender", "navy" or "forest".
+    #: Window colours: "midnight", "daylight", "kingdom-hearts", "ink-paper",
+    #: "matcha", "rainy-night", "summer-dusk", "neon" or "crimson-moon".
     theme: str = "midnight"
     #: How the library is shown: "list" (a table, sortable) or "grid" (covers).
     library_view: str = "list"

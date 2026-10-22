@@ -136,3 +136,70 @@ def progress(seconds: float | None, length_minutes: int | None) -> Progress | No
         return None
     average = float(length_minutes) * 60
     return Progress(max(float(seconds or 0), 0.0) / average, average)
+
+
+# -- the heatmap ------------------------------------------------------------
+def heatmap(entry: Entry | None, weeks: int = 26, today: _dt.date | None = None,
+            ) -> list[list[tuple[_dt.date, float | None]]]:
+    """``weeks`` columns, oldest first, of seven days each, Monday at the top.
+
+    Days after today are None: drawn as nothing, not as zero.
+    """
+    today = _today(today)
+    record = (entry.days if entry else {}) or {}
+    this_monday = today - _dt.timedelta(days=today.weekday())
+    first = this_monday - _dt.timedelta(weeks=weeks - 1)
+    columns = []
+    for week in range(weeks):
+        column = []
+        for weekday in range(7):
+            day = first + _dt.timedelta(weeks=week, days=weekday)
+            column.append((day, None if day > today else float(record.get(day.isoformat(), 0.0))))
+        columns.append(column)
+    return columns
+
+
+#: Where each shade of the heatmap starts, in seconds: a taste, half an hour,
+#: an hour, a long evening.
+LEVELS = (1, 1800, 3600, 7200)
+
+
+def level(seconds: float | None) -> int:
+    """0 (nothing) to 4 (a long evening) - which shade a day gets."""
+    if not seconds:
+        return 0
+    return sum(1 for edge in LEVELS if seconds >= edge)
+
+
+def _played_days(entry: Entry | None) -> list[_dt.date]:
+    days = [_day(t) for t, s in ((entry.days if entry else {}) or {}).items() if s and s > 0]
+    return sorted(d for d in days if d)
+
+
+def streaks(entry: Entry | None, today: _dt.date | None = None) -> tuple[int, int]:
+    """(current, longest) runs of consecutive days with any reading.
+
+    The current run survives until the end of today: not having played *yet*
+    today does not break yesterday's streak.
+    """
+    today = _today(today)
+    days = _played_days(entry)
+    longest = run = 0
+    previous = None
+    for day in days:
+        run = run + 1 if previous is not None and (day - previous).days == 1 else 1
+        longest = max(longest, run)
+        previous = day
+    played = set(days)
+    current = 0
+    cursor = today if today in played else today - _dt.timedelta(days=1)
+    while cursor in played:
+        current += 1
+        cursor -= _dt.timedelta(days=1)
+    return current, longest
+
+
+def best_day(entry: Entry | None) -> tuple[_dt.date, float] | None:
+    record = (entry.days if entry else {}) or {}
+    best = max(((d, s) for d, s in record.items() if _day(d)), key=lambda x: x[1], default=None)
+    return (_day(best[0]), float(best[1])) if best else None

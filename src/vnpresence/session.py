@@ -293,6 +293,16 @@ class GameSession:
         except Exception:  # pragma: no cover - the history is not load-bearing
             log.debug("could not record play time for %s", self.profile.id, exc_info=True)
 
+    def _log_session(self) -> None:
+        """One line in the game's session history. Never raises."""
+        try:
+            from . import session_log
+
+            session_log.record(self.profile.id, self.start_time, time.time(),
+                               self.read_seconds)
+        except Exception:  # pragma: no cover - the history is not load-bearing
+            log.debug("could not log the session for %s", self.profile.id, exc_info=True)
+
     # -- run --------------------------------------------------------------
     def run(
         self,
@@ -391,6 +401,7 @@ class GameSession:
             if hotkey is not None:
                 hotkey.stop()
             self._record_playtime(final=True)
+            self._log_session()
             self.presence.close()
 
         seconds = max(time.time() - self.start_time, 0.0)

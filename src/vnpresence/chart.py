@@ -110,3 +110,69 @@ def draw(canvas, points, palette, *, weekly: bool = False) -> list[Bar]:  # prag
                                           fill=palette.surface, outline="")
         canvas.tag_lower(backing, note)
     return plan.bars
+
+
+# -- the heatmap ----------------------------------------------------------
+HEAT_LEFT, HEAT_TOP, HEAT_GAP = 34, 20, 3
+
+
+@dataclass(frozen=True)
+class Cell:
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    when: _dt.date
+    seconds: float
+
+
+def heat_layout(columns, width: int) -> tuple[list[Cell], list[tuple[float, str]], float]:
+    """Where each day's square goes; month labels along the top; the height
+    the whole thing needs at this width."""
+    weeks = max(len(columns), 1)
+    size = max(min((width - HEAT_LEFT) / weeks - HEAT_GAP, 18.0), 6.0)
+    cells, months, last_month = [], [], None
+    for w, column in enumerate(columns):
+        x0 = HEAT_LEFT + w * (size + HEAT_GAP)
+        for d, (day, seconds) in enumerate(column):
+            if seconds is None:
+                continue
+            y0 = HEAT_TOP + d * (size + HEAT_GAP)
+            cells.append(Cell(x0, y0, x0 + size, y0 + size, day, seconds))
+        first = column[0][0]
+        if first.month != last_month:
+            if last_month is not None or first.day <= 7:
+                months.append((x0, first.strftime("%b")))
+            last_month = first.month
+    return cells, months, HEAT_TOP + 7 * (size + HEAT_GAP)
+
+
+def shade(palette, level: int) -> str:
+    """Nothing is a quiet square; each level is a stronger share of the accent."""
+    from .theme import _mix
+
+    if level <= 0:
+        return _mix(palette.surface, palette.border, 0.85)
+    return _mix(palette.surface, palette.accent, (0.32, 0.55, 0.78, 1.0)[min(level, 4) - 1])
+
+
+def draw_heatmap(canvas, columns, palette) -> list[Cell]:  # pragma: no cover - needs Tk
+    from .stats import level
+
+    canvas.delete("all")
+    width = int(canvas.winfo_width() or canvas.cget("width"))
+    cells, months, height = heat_layout(columns, width)
+    canvas.configure(height=height + 4)
+    small = ("Segoe UI", 8)
+    for x, text in months:
+        canvas.create_text(x, HEAT_TOP - 10, text=text, anchor="w", fill=palette.muted, font=small)
+    if cells:
+        size = cells[0].x1 - cells[0].x0
+        for row, text in ((0, "Mon"), (2, "Wed"), (4, "Fri")):
+            canvas.create_text(HEAT_LEFT - 6, HEAT_TOP + row * (size + HEAT_GAP) + size / 2,
+                               text=text, anchor="e", fill=palette.muted, font=small)
+    for index, cell in enumerate(cells):
+        canvas.create_rectangle(cell.x0, cell.y0, cell.x1, cell.y1, outline="",
+                                fill=shade(palette, level(cell.seconds)),
+                                tags=("cell", f"c{index}"))
+    return cells

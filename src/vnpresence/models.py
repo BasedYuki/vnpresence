@@ -169,6 +169,12 @@ class GameMetadata:
     #: VNDB's average of its readers' play times, in minutes; None when too
     #: few have logged one. What "Progress" on the game page compares with.
     length_minutes: int | None = None
+    #: The page's About tab: the full description as VNDB writes it (markup
+    #: and spoiler tags included - hidden at display time), the developers,
+    #: and the tags with their spoiler and 18+ flags.
+    about: str | None = None
+    developers: list[str] = field(default_factory=list)
+    tags: list[dict[str, Any]] = field(default_factory=list)
     rating: float | None = None
     #: How many people rated it. Not for display: it is how a well-known novel
     #: is told from a near-empty entry that happens to share its name.
@@ -188,6 +194,9 @@ class GameMetadata:
             "platforms": list(self.platforms),
             "length": self.length,
             "length_minutes": self.length_minutes,
+            "about": self.about,
+            "developers": list(self.developers),
+            "tags": list(self.tags),
             "rating": self.rating,
             "votes": self.votes,
             "nsfw": self.nsfw,

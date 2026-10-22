@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -25,16 +26,16 @@ USER_AGENT = "VNPresence (+https://github.com/BasedYuki/vnpresence)"
 FIELDS = (
     "id, title, alttitle, image.url, image.sexual, image.violence, "
     "description, released, languages, platforms, length, length_minutes, rating, "
-    "votecount, "
+    "votecount, developers.name, "
     "tags.name, tags.category, tags.rating, tags.spoiler"
 )
 
 #: Bumped whenever the shape of a cached entry changes, so an old cache is
 #: refetched instead of silently missing or carrying stale fields.
-CACHE_SCHEMA = 5
+CACHE_SCHEMA = 6
 #: Older cache entries that are still fine to draw a cover from: peek() reads
 #: them, get() refetches them for the fields they are missing.
-DRAWABLE_SCHEMAS = (4, CACHE_SCHEMA)
+DRAWABLE_SCHEMAS = (4, 5, CACHE_SCHEMA)
 
 LENGTH_LABELS = {
     1: "Very short (< 2h)",
@@ -191,12 +192,69 @@ def parse_vn(item: dict[str, Any]) -> GameMetadata:
         platforms=list(item.get("platforms") or []),
         length=LENGTH_LABELS.get(length) if isinstance(length, int) else None,
         length_minutes=_minutes(item.get("length_minutes")),
+        about=item.get("description") or None,
+        developers=[d.get("name") for d in item.get("developers") or []
+                    if isinstance(d, dict) and d.get("name")],
+        tags=_tags(item.get("tags")),
         rating=round(rating / 10, 1) if isinstance(rating, (int, float)) else None,
         votes=int(item.get("votecount") or 0),
         nsfw=is_nsfw(item),
         url=f"https://vndb.org/{item.get('id')}" if item.get("id") else None,
         source="vndb",
     )
+
+
+def _tags(raw: Any) -> list[dict[str, Any]]:
+    """VNDB's tags, strongest first, with what is needed to hide spoilers and
+    18+ ones: name, category ("cont", "ero", "tech"), rating 0-3, spoiler 0-2."""
+    out = []
+    for tag in raw or []:
+        if not isinstance(tag, dict) or not tag.get("name"):
+            continue
+        try:
+            out.append({"name": str(tag["name"]), "category": str(tag.get("category") or ""),
+                        "rating": float(tag.get("rating") or 0),
+                        "spoiler": int(tag.get("spoiler") or 0)})
+        except (TypeError, ValueError):
+            continue
+    return sorted(out, key=lambda t: -t["rating"])
+
+
+def visible_tags(tags: list[dict[str, Any]], *, spoilers: bool = False, adult: bool = True,
+                 limit: int = 24) -> tuple[list[str], int]:
+    """The tag names to show, and how many were held back as spoilers.
+
+    A tag VNDB marks as a spoiler (level 1 or 2) stays hidden until the reader
+    asks; an 18+ ("ero") tag is never shown for a game kept private.
+    """
+    shown, hidden = [], 0
+    for tag in tags:
+        if tag.get("rating", 0) < 1.0:
+            continue  # VNDB's weakest votes: noise
+        if tag.get("category") == "ero" and not adult:
+            continue
+        if tag.get("spoiler", 0) > 0 and not spoilers:
+            hidden += 1
+            continue
+        shown.append(tag["name"])
+    return shown[:limit], hidden
+
+
+_SPOILER = re.compile(r"\[spoiler\](.*?)\[/spoiler\]", re.IGNORECASE | re.DOTALL)
+_URL = re.compile(r"\[url=[^\]]*\](.*?)\[/url\]", re.IGNORECASE | re.DOTALL)
+
+
+def about_text(raw: str | None, *, spoilers: bool = False) -> str:
+    """VNDB's description for reading on the page: paragraphs kept, markup
+    gone, and spoiler passages left out (or kept, when asked for)."""
+    if not raw:
+        return ""
+    text = raw.replace("\r", "")
+    text = _SPOILER.sub((lambda m: m.group(1)) if spoilers else "[spoiler hidden]", text)
+    text = _URL.sub(lambda m: m.group(1), text)
+    text = re.sub(r"\[/?(?:i|b|u|s|raw|quote|code)\]", "", text, flags=re.IGNORECASE)
+    paragraphs = [" ".join(p.split()) for p in re.split(r"\n\s*\n", text)]
+    return "\n\n".join(p for p in paragraphs if p)
 
 
 def _minutes(value: Any) -> int | None:
@@ -232,7 +290,8 @@ def clean_description(raw: str | None, limit: int = 300) -> str | None:
     """Strip VNDB markup and shorten to something that fits a presence line."""
     if not raw:
         return None
-    text = raw
+    # A spoiler passage is dropped whole: the presence is read by other people.
+    text = _SPOILER.sub("", raw)
     for marker in ("[spoiler]", "[/spoiler]", "[i]", "[/i]", "[b]", "[/b]"):
         text = text.replace(marker, "")
     while "[url=" in text:

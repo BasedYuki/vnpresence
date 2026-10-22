@@ -117,7 +117,7 @@ class DefaultFormatter(PresenceFormatter):
             config.default_status_text,
         )
 
-        read_for = format_reading_time(state.playtime_seconds)
+        read_for = _join(format_reading_time(state.playtime_seconds), _routes(profile))
 
         if config.use_activity_name:
             # Current Discord clients honour `name`, so the header itself can be
@@ -183,6 +183,16 @@ def _with_pause(status: str | None, stopped: str | None, default: str | None) ->
     suffix = f" ({stopped.casefold()})"
     trimmed = clamp(status, MAX_FIELD - len(suffix))
     return f"{trimmed}{suffix}" if trimmed else stopped
+
+
+def _routes(profile: GameProfile) -> str | None:
+    """"Routes 2/5" from the reader's own route list, if they keep one."""
+    try:
+        from .journal import routes_line
+
+        return routes_line(profile.id)
+    except Exception:  # pragma: no cover - never worth losing the presence over
+        return None
 
 
 def _join(*parts: str | None) -> str | None:
