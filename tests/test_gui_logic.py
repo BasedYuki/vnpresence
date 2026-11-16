@@ -44,6 +44,8 @@ def _install_tk_stubs() -> None:
             self._value = value
 
     tk.Tk = Widget
+    tk.Canvas = Widget
+    tk.TclError = Exception
     tk.Frame = Widget
     tk.Label = Widget
     tk.StringVar = Variable
@@ -64,7 +66,11 @@ def _install_tk_stubs() -> None:
     simpledialog = types.ModuleType("tkinter.simpledialog")
     simpledialog.askstring = lambda *a, **k: None
 
+    font = types.ModuleType("tkinter.font")
+    font.Font = Widget
+
     tk.ttk = ttk
+    tk.font = font
     tk.filedialog = filedialog
     tk.messagebox = messagebox
     tk.simpledialog = simpledialog
@@ -72,6 +78,7 @@ def _install_tk_stubs() -> None:
         {
             "tkinter": tk,
             "tkinter.ttk": ttk,
+            "tkinter.font": font,
             "tkinter.filedialog": filedialog,
             "tkinter.messagebox": messagebox,
             "tkinter.simpledialog": simpledialog,

@@ -19,10 +19,11 @@ from dataclasses import dataclass
 
 import psutil
 
+from . import claims
 from .config import AppConfig
 from .daemon import clear_record, write_record
 from .emulators import matches_window
-from .launcher import _split_path
+from .launcher import LaunchError, _split_path
 from .library import Library
 from .models import GameProfile, PrivacyMode
 from .plugins import PluginRegistry, build_registry
@@ -63,7 +64,8 @@ class LibraryWatcher:
         """Games worth watching: everything except the ones set to `off`."""
         return [p for p in self.library.load_all() if p.privacy is not PrivacyMode.OFF]
 
-    def find_match(self, profiles: list[GameProfile] | None = None) -> Match | None:
+    def find_match(self, profiles: list[GameProfile] | None = None, *,
+                   skip: set[str] | None = None) -> Match | None:
         """Return the first library game that is currently running.
 
         Matching is by full path first and by file name only as a fallback,
@@ -83,6 +85,10 @@ class LibraryWatcher:
         ``window_match``.
         """
         profiles = self.watchable() if profiles is None else profiles
+        if skip:
+            # Games another session is already tracking - the window's Play,
+            # most often. Attaching too would count the evening twice.
+            profiles = [p for p in profiles if p.id not in skip]
         if not profiles:
             return None
 
@@ -146,7 +152,9 @@ class LibraryWatcher:
 
         try:
             while not self._stop:
-                match = self.find_match()
+                watchable = self.watchable()
+                busy = claims.held_elsewhere(p.id for p in watchable)
+                match = self.find_match(watchable, skip=busy)
                 if match is None:
                     if once:
                         return
@@ -157,6 +165,9 @@ class LibraryWatcher:
                 self._session = GameSession(match.profile, self.config, self.registry)
                 try:
                     self._session.run(attach=True, on_event=notify)
+                except LaunchError as exc:
+                    # Claimed by the window between our scan and our attach.
+                    notify("watch", str(exc))
                 except Exception as exc:
                     # A single bad game must not take the watcher down with it.
                     log.exception("session for %s failed", match.profile.id)

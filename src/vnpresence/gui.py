@@ -23,7 +23,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import __version__, covers, screenshots, startup, theme, update
+from . import __version__, covers, motion, screenshots, startup, theme, update
 from .config import AppConfig
 from .daemon import running_pid, spawn_background, stop_background
 from .emulators import is_emulator, is_rom, rom_kind
@@ -153,6 +153,7 @@ class App(tk.Tk):
             self._maximize()
 
         self._build_widgets()
+        self._repair_double_counting()
         self.refresh()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         # Off the main thread and a moment late: a slow GitHub must never keep
@@ -192,11 +193,12 @@ class App(tk.Tk):
         # List or covers - the two ways PCSX2 shows a library, and the choice
         # survives a restart.
         self.view_var = tk.StringVar(value=self.config_data.library_view or "list")
-        for value, text in (("list", "\u2630  List"), ("grid", "\u25a6  Grid")):
-            ttk.Radiobutton(
-                filter_row, text=text, value=value, variable=self.view_var,
-                style="View.Toolbutton", command=self.set_view,
-            ).pack(side="left", padx=(0, 4))
+        # A pill that glides between the two, rather than two buttons that flick.
+        self.view_switch = motion.PillSwitch(
+            filter_row, [("list", "\u2630  List"), ("grid", "\u25a6  Grid")],
+            self.view_var, self.palette, command=self.set_view,
+        )
+        self.view_switch.pack(side="left", padx=(0, 4))
         # How big the covers are, for the grid only: a slider, and Ctrl + the
         # mouse wheel over the shelf. Remembered like the view itself.
         self.size_box = ttk.Frame(filter_row)
@@ -690,6 +692,25 @@ class App(tk.Tk):
                 self._details.destroy()
         self._details = DetailsWindow(self, profile)
 
+    def _repair_double_counting(self) -> None:
+        """Once, after updating: take back evenings that were counted twice."""
+        try:
+            from .repair import repair_once
+            from .stats import format_clock
+
+            fixed = repair_once()
+        except Exception:
+            log.warning("double-count repair failed", exc_info=True)
+            return
+        if not fixed:
+            return
+        names = []
+        for item in fixed:
+            profile = self.library.get(item.game_id)
+            title = profile.title if profile else item.game_id
+            names.append(f"{title} (-{format_clock(item.seconds)})")
+        self.status.set("Fixed time that had been counted twice: " + ", ".join(names))
+
     def open_project_page(self) -> None:
         """VNPresence on GitHub - the source, the issues, the releases."""
         from .update import PROJECT_PAGE
@@ -773,6 +794,8 @@ class App(tk.Tk):
         palette = theme.by_label(self.theme_var.get())
         self.palette = theme.apply(self, palette.name)
         self.tree.tag_configure("odd", background=self.palette.stripe)
+        with contextlib.suppress(Exception):
+            self.view_switch.recolor(self.palette)
         # An open game page is drawn in the old colours: draw it again.
         details = getattr(self, "_details", None)
         if details is not None:

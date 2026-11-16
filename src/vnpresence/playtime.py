@@ -89,6 +89,21 @@ def _days(raw: Any) -> dict[str, float]:
     return days
 
 
+def fit_days(entry: Entry) -> None:
+    """Keep the per-day history from adding up to more than the total.
+
+    The total can be lowered by hand (Time played...), and a day-by-day chart
+    showing more time than the game has in all is a chart nobody can trust.
+    Every day shrinks by the same share, so the shape of the history stays.
+    """
+    counted = sum(entry.days.values())
+    if counted <= entry.seconds or counted <= 0:
+        return
+    share = entry.seconds / counted
+    entry.days = {day: value * share for day, value in entry.days.items()
+                  if value * share >= 1}
+
+
 class Playtime:
     """The reading history, stored as one small YAML file.
 
@@ -131,6 +146,32 @@ class Playtime:
         entries = self.load()
         entry = entries.get(game_id, Entry())
         entry.seconds = max(float(seconds), 0.0)
+        fit_days(entry)
+        entries[game_id] = entry
+        self._save(entries)
+        return entry
+
+    def take_back(self, game_id: str, seconds: float, *, day: str | None = None,
+                  sessions: int = 0, total: bool = True) -> Entry:
+        """Remove time counted that should not have been - from the total (unless
+        ``total`` is False), from ``day`` first and then the days after it, and
+        ``sessions`` from the session count."""
+        entries = self.load()
+        entry = entries.get(game_id, Entry())
+        seconds = max(float(seconds), 0.0)
+        if total:
+            entry.seconds = max(entry.seconds - seconds, 0.0)
+        entry.sessions = max(entry.sessions - sessions, 0)
+        left = seconds
+        for key in sorted(k for k in entry.days if day is None or k >= day):
+            if left <= 0:
+                break
+            used = min(entry.days[key], left)
+            entry.days[key] -= used
+            left -= used
+            if entry.days[key] <= 0:
+                del entry.days[key]
+        fit_days(entry)
         entries[game_id] = entry
         self._save(entries)
         return entry

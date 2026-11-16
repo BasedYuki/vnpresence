@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
+from . import claims
 from .config import AppConfig
 from .formatter import IDLE, PAUSED, effective_privacy
 from .idle import idle_seconds
@@ -311,7 +312,20 @@ class GameSession:
         on_event: Callable[[str, str], None] | None = None,
     ) -> SessionResult:
         notify = on_event or (lambda kind, message: log.info("%s: %s", kind, message))
+        # One session per game. The window and the background watcher are
+        # separate processes; without this both could track the same evening
+        # and the history would count it twice.
+        if not claims.claim(self.profile.id):
+            raise LaunchError(
+                f"{self.profile.title} is already being tracked - auto-detect picked "
+                "it up. Its time is being counted; there is nothing to start."
+            )
+        try:
+            return self._run(attach=attach, notify=notify)
+        finally:
+            claims.release(self.profile.id)
 
+    def _run(self, *, attach: bool, notify: Callable[[str, str], None]) -> SessionResult:
         self.resolve_metadata()
         privacy = effective_privacy(self.profile, self.metadata, self.config)
         notify("metadata", f"{self.profile.title} ({(self.metadata or _empty()).source})")

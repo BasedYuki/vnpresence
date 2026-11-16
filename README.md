@@ -921,6 +921,7 @@ Run `vnpresence doctor` first - it checks all of this and prints what is wrong.
 | "VNDB did not accept the token" | It was deleted or mistyped. Make a new one under My Profile → Applications on vndb.org, with **Write to my list** ticked |
 | The heatmap is empty for a game I have played for years | It counts from 0.17 on. Older time is in the total, not in the heatmap |
 | A Japanese game shows garbled text or will not start | Set **Launch with** to Locale Emulator or NTLEA on its page |
+| The time came out doubled after a session (before 0.18.1) | Play was pressed with auto-detect on, and both tracked the same game. Since 0.18.1 a game is tracked by one of them only, and the first time 0.18.1 opens it finds those twin sessions in the session history and takes the extra time back off the total and the heatmap (once; the status line says what it fixed). Sessions from before 0.18 are not in the history - fix those totals with **Time played…** |
 | Screenshots come out black | The game is in exclusive fullscreen. Set it to windowed or borderless and they work |
 | F8 does nothing | Another program already owns it - the status line says so when a session starts. Set `screenshot_hotkey` in `config.yaml` to another key |
 | The grid shows names but no covers | They are still downloading (once, in the background), or the game is set to `private`. If it lasts, `vnpresence rematch --all` |

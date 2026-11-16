@@ -32,6 +32,7 @@ from . import (
     cover_colors,
     covers,
     journal,
+    motion,
     screenshots,
     session_log,
     shell,
@@ -90,12 +91,12 @@ class DetailsWindow(tk.Toplevel):
             child.destroy()
         self._build()
         with contextlib.suppress(Exception):
-            self.tabs.select(tab)
+            self.tabs.show(tab, animate=False)
         self._load_in_background()
 
     def _current_tab(self) -> int:
         try:
-            return self.tabs.index(self.tabs.select())
+            return self.tabs.current
         except Exception:
             return 0
 
@@ -120,15 +121,17 @@ class DetailsWindow(tk.Toplevel):
         ttk.Label(self, textvariable=self.message, style="Muted.TLabel",
                   padding=(20, 0)).pack(side="bottom", fill="x", pady=(0, 8))
 
-        self.tabs = ttk.Notebook(self, style="Page.TNotebook")
-        self.tabs.pack(fill="both", expand=True, padx=20, pady=(8, 8))
+        # Tabs whose pill slides to the one you pick, and whose pages ease
+        # up into place - ttk's own notebook can only jump.
+        self.tabs = motion.SmoothTabs(self, self.palette)
+        self.tabs.pack(fill="both", expand=True, padx=20, pady=(10, 8))
         for title, build in (("Overview", self._overview_tab),
                              ("Routes & Notes", self._journal_tab),
                              ("Sessions", self._sessions_tab),
                              ("About", self._about_tab),
                              ("Screenshots", self._screenshots_tab),
                              ("Settings", self._settings_tab)):
-            frame = ttk.Frame(self.tabs, style="Inner.TFrame", padding=18)
+            frame = ttk.Frame(self.tabs.body, style="Inner.TFrame", padding=18)
             self.tabs.add(frame, text=title)
             build(frame)
 

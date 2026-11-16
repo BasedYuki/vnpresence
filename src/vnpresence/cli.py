@@ -702,10 +702,12 @@ def selfcheck() -> None:
         from . import (  # noqa: F401
             banner,
             chart,
+            claims,
             cover_colors,
             details_window,
             journal,
             library_view,
+            motion,
             screenshots,
             session_log,
             shell,
