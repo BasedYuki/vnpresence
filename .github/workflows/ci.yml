@@ -11,7 +11,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Pinned: ubuntu-latest moved to 26.04, which has no Python 3.9 -
+        # and 3.9 is the oldest version VNPresence promises to run on.
+        os: [ubuntu-24.04, windows-latest]
         python-version: ["3.9", "3.12"]
     steps:
       - uses: actions/checkout@v4
